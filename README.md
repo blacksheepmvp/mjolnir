@@ -1,4 +1,4 @@
-<img width="512" height="512" alt="mjolnir_icon" src="https://github.com/blacksheepmvp/mjolnir/blob/main/app/src/main/res/drawable/ic_launcher_foreground.png" />
+<picture><img width="512" height="512" alt="mjolnir_icon" src="https://raw.githubusercontent.com/blacksheepmvp/mjolnir/main/app/src/main/res/drawable/ic_launcher_foreground.png" /></picture>
 
 ## 🔨 Mjolnir
 
