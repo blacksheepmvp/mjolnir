@@ -46,6 +46,11 @@ Mjolnir is designed for simplicity, allowing you to add PC games to your Android
 
 ---
 
+## 📜 Changelog
+A complete history of all changes made to the project can be found in the [Changelog](CHANGELOG.md).
+
+---
+
 ## 🛠 Project Status & Development Roadmap
 
 Mjolnir is built to be a collection of sparsely-related tools for dual screen Android handhelds, inspired by the AYN Thor. This initial release is the first tool in that kit.
