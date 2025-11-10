@@ -1,15 +1,20 @@
 package xyz.blacksheep.mjolnir
 
+import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.browser.customtabs.CustomTabsIntent
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -22,12 +27,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Menu
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -35,7 +38,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -67,6 +69,7 @@ private const val KEY_ROM_DIR_URI = "romDirUri"
 private const val KEY_THEME = "theme"
 private const val KEY_CONFIRM_DELETE = "confirmDelete"
 private const val KEY_AUTO_CREATE_FILE = "autoCreateFile"
+private const val ACTION_CCT_URL_RETURN = "xyz.blacksheep.mjolnir.ACTION_CCT_URL_RETURN"
 
 enum class AppTheme { LIGHT, DARK, SYSTEM }
 
@@ -83,7 +86,28 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
-        intentState.value = intent
+
+        // Check for the CCT custom button callback and transform the intent
+        var intentToProcess = intent
+        if (intent?.action == ACTION_CCT_URL_RETURN) {
+            Log.e("MjolnirCCT_DEBUG", "CALLBACK RECEIVED! Full Intent Dump:")
+            Log.e("MjolnirCCT_DEBUG", "Action: " + intent.action)
+            Log.e("MjolnirCCT_DEBUG", "Data URI (Expected URL): " + intent.dataString)
+            val extras = intent.extras
+            if (extras != null) { for (key in extras.keySet()) {
+                @Suppress("DEPRECATION")
+                Log.e("MjolnirCCT_DEBUG", "Extra Key: " + key + " Value: " + extras[key])
+            } }
+
+            val url = intent.dataString
+            if (url != null) {
+                intentToProcess = Intent(Intent.ACTION_SEND).apply {
+                    putExtra(Intent.EXTRA_TEXT, url)
+                }
+            }
+        }
+        intentState.value = intentToProcess
+
 
         val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
 
@@ -100,7 +124,6 @@ class MainActivity : ComponentActivity() {
             if (!view.isInEditMode) {
                 SideEffect {
                     val window = (view.context as android.app.Activity).window
-                    window.statusBarColor = Color.Transparent.toArgb()
                     WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !useDarkTheme
                 }
             }
@@ -144,7 +167,26 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
-        intentState.value = intent
+        var intentToProcess = intent
+        // Check for the CCT custom button callback and transform the intent
+        if (intent?.action == ACTION_CCT_URL_RETURN) {
+            Log.e("MjolnirCCT_DEBUG", "CALLBACK RECEIVED! Full Intent Dump:")
+            Log.e("MjolnirCCT_DEBUG", "Action: " + intent.action)
+            Log.e("MjolnirCCT_DEBUG", "Data URI (Expected URL): " + intent.dataString)
+            val extras = intent.extras
+            if (extras != null) { for (key in extras.keySet()) {
+                @Suppress("DEPRECATION")
+                Log.e("MjolnirCCT_DEBUG", "Extra Key: " + key + " Value: " + extras[key])
+            } }
+
+            val url = intent.dataString
+            if (url != null) {
+                intentToProcess = Intent(Intent.ACTION_SEND).apply {
+                    putExtra(Intent.EXTRA_TEXT, url)
+                }
+            }
+        }
+        intentState.value = intentToProcess
     }
 
     @Composable
@@ -245,16 +287,20 @@ class MainActivity : ComponentActivity() {
         }
 
         LaunchedEffect(intent) {
-            if (intent?.action == Intent.ACTION_SEND && intent.type == "text/plain") {
-                intent.getStringExtra(Intent.EXTRA_TEXT)?.let { url ->
-                    extractAppIdFromUrl(url)?.let { appId ->
-                        searchForGame(appId)
-                    } ?: run {
-                        uiState = UiState.Failure("No AppID in URL")
-                    }
-                }
-                onIntentConsumed()
+            if (intent == null) return@LaunchedEffect
+
+            val url = when (intent.action) {
+                Intent.ACTION_SEND -> intent.getStringExtra(Intent.EXTRA_TEXT)
+                else -> null
             }
+
+            url?.let {
+                extractAppIdFromUrl(it)?.let { appId ->
+                    searchForGame(appId)
+                }
+            }
+
+            onIntentConsumed()
         }
 
         val performDelete: (String) -> Unit = {
@@ -342,6 +388,26 @@ class MainActivity : ComponentActivity() {
                                 multiSelectMode = true
                                 selectedFiles = selectedFiles + fileName
                             },
+                            onOpenSteamDb = {
+                                val largeBitmap = BitmapFactory.decodeResource(context.resources, android.R.drawable.ic_menu_share)
+                                val scaledIcon = Bitmap.createScaledBitmap(largeBitmap, 96, 96, true)
+
+                                val shareIntent = Intent(context, MainActivity::class.java).apply {
+                                    action = ACTION_CCT_URL_RETURN
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+                                }
+                                val pendingIntent = PendingIntent.getActivity(
+                                    context, 0, shareIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
+                                )
+
+                                val customTabsIntent = CustomTabsIntent.Builder()
+                                    .setActionButton(scaledIcon, "Share to Mjolnir", pendingIntent, true)
+                                    .build()
+                                Log.e("MjolnirCCT_DEBUG", "PENDING INTENT CHECK")
+                                Log.e("MjolnirCCT_DEBUG", "Action: " + shareIntent.action)
+                                Log.e("MjolnirCCT_DEBUG", "Flags: " + shareIntent.flags.toString())
+                                customTabsIntent.launchUrl(context, Uri.parse("https://steamdb.info/"))
+                             },
                             inMultiSelectMode = multiSelectMode,
                             selectedFiles = selectedFiles
                         )
@@ -399,7 +465,7 @@ class MainActivity : ComponentActivity() {
                 fileName = showDeleteConfirmDialog!!,
                 onDismiss = { showDeleteConfirmDialog = null },
                 onConfirm = {
-                    performDelete(showDeleteConfirmDialog!!)
+                    performDelete(showDeleteConfirmDialog!!,)
                     showDeleteConfirmDialog = null
                 }
             )
@@ -553,45 +619,61 @@ fun SettingsScreen(
 ) {
     BackHandler { onClose() }
     val themeOptions = AppTheme.entries.map { it.name }
-    Column(modifier = modifier.fillMaxSize().padding(16.dp)) {
-        Text("Settings", style = MaterialTheme.typography.headlineLarge)
-        Spacer(Modifier.height(24.dp))
-        Text("Theme", style = MaterialTheme.typography.titleMedium)
-        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-            themeOptions.forEachIndexed { index, label ->
-                SegmentedButton(
-                    shape = SegmentedButtonDefaults.itemShape(index = index, count = themeOptions.size),
-                    onClick = { onThemeChange(AppTheme.valueOf(label)) },
-                    selected = currentTheme.name == label
-                ) {
-                    Text(label)
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Settings") },
+                navigationIcon = {
+                    IconButton(onClick = onClose) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                }
+            )
+        },
+        modifier = modifier
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .padding(innerPadding)
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp)
+        ) {
+            Text("Theme", style = MaterialTheme.typography.titleMedium)
+            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                themeOptions.forEachIndexed { index, label ->
+                    SegmentedButton(
+                        shape = SegmentedButtonDefaults.itemShape(index = index, count = themeOptions.size),
+                        onClick = { onThemeChange(AppTheme.valueOf(label)) },
+                        selected = currentTheme.name == label
+                    ) {
+                        Text(label)
+                    }
                 }
             }
+            Spacer(Modifier.height(24.dp))
+            Text("File Operations", style = MaterialTheme.typography.titleMedium)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Confirm file deletions", modifier = Modifier.weight(1f))
+                Switch(checked = confirmDelete, onCheckedChange = onConfirmDeleteChange)
+            }
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Auto-create file on search success", modifier = Modifier.weight(1f))
+                Switch(checked = autoCreateFile, onCheckedChange = onAutoCreateFileChange)
+            }
+            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+            Spacer(Modifier.height(8.dp))
+            Text("Current ROMs Directory", style = MaterialTheme.typography.titleMedium)
+            Text(currentPath, style = MaterialTheme.typography.bodySmall)
+            Spacer(Modifier.height(8.dp))
+            Button(onClick = onChangeDirectory) { Text("Change Directory") }
         }
-        Spacer(Modifier.height(24.dp))
-        Text("File Operations", style = MaterialTheme.typography.titleMedium)
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Confirm file deletions", modifier = Modifier.weight(1f))
-            Switch(checked = confirmDelete, onCheckedChange = onConfirmDeleteChange)
-        }
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Auto-create file on search success", modifier = Modifier.weight(1f))
-            Switch(checked = autoCreateFile, onCheckedChange = onAutoCreateFileChange)
-        }
-        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-        Spacer(Modifier.height(8.dp))
-        Text("Current ROMs Directory", style = MaterialTheme.typography.titleMedium)
-        Text(currentPath, style = MaterialTheme.typography.bodySmall)
-        Spacer(Modifier.height(8.dp))
-        Button(onClick = onChangeDirectory) { Text("Change Directory") }
-        Spacer(Modifier.weight(1f))
-        OutlinedButton(onClick = onClose, modifier = Modifier.fillMaxWidth()) { Text("Close") }
     }
 }
 
@@ -826,7 +908,7 @@ fun MultiSelectTopBar(selectedCount: Int, onCancel: () -> Unit, onDelete: () -> 
 fun MainScreen(
     uiState: UiState, onSearch: (String) -> Unit, steamFiles: List<String>,
     fileCreationResult: String?, onRefresh: () -> Unit, onCreateFile: (GameInfo) -> Unit,
-    onFileClick: (String) -> Unit, onFileLongClick: (String) -> Unit,
+    onFileClick: (String) -> Unit, onFileLongClick: (String) -> Unit, onOpenSteamDb: () -> Unit,
     inMultiSelectMode: Boolean, selectedFiles: Set<String>,
     modifier: Modifier = Modifier
 ) {
@@ -851,7 +933,7 @@ fun MainScreen(
                 HorizontalDivider(modifier = Modifier.padding(vertical = 16.dp))
                 ManualInputUi(onSearch = onSearch)
                 Spacer(Modifier.height(16.dp))
-                OutlinedButton(onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, "https://steamdb.info/".toUri())) }) {
+                OutlinedButton(onClick = onOpenSteamDb) {
                     Text("Open SteamDB.info")
                 }
             }
@@ -892,7 +974,7 @@ fun MainScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             OutlinedButton(
-                onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, "https://steamdb.info/".toUri())) },
+                onClick = onOpenSteamDb,
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text("Open SteamDB.info")
@@ -909,7 +991,7 @@ fun MainScreenPreviewPortrait() {
             uiState = UiState.Success(GameInfo("123", "Test Game Name That is Quite Long", "")), onSearch = {},
             steamFiles = listOf("A.steam", "B.steam"), fileCreationResult = "Success",
             onRefresh = {}, onCreateFile = {}, onFileClick = {},
-            inMultiSelectMode = false, selectedFiles = emptySet(), onFileLongClick = {}
+            inMultiSelectMode = false, selectedFiles = emptySet(), onFileLongClick = {}, onOpenSteamDb = {}
         )
     }
 }
@@ -922,7 +1004,7 @@ fun MainScreenPreviewLandscape() {
             uiState = UiState.Success(GameInfo("123", "Test Game Name That is Quite Long", "")), onSearch = {},
             steamFiles = listOf("A.steam", "B.steam", "C.steam", "D.steam", "E.steam"), fileCreationResult = "Success",
             onRefresh = {}, onCreateFile = {}, onFileClick = {},
-            inMultiSelectMode = false, selectedFiles = emptySet(), onFileLongClick = {}
+            inMultiSelectMode = false, selectedFiles = emptySet(), onFileLongClick = {}, onOpenSteamDb = {}
         )
     }
 }
