@@ -100,6 +100,7 @@ class MainActivity : ComponentActivity() {
             if (!view.isInEditMode) {
                 SideEffect {
                     val window = (view.context as android.app.Activity).window
+                    @Suppress("DEPRECATION")
                     window.statusBarColor = Color.Transparent.toArgb()
                     WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !useDarkTheme
                 }
