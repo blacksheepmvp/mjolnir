@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.3] - 2024-07-28
+
+### Features
+*   Added a "Manual Entry" option in developer mode to allow for the creation of custom `.steam` files.
+*   Implemented "Fire-and-forget" sharing: When sharing a URL from another app, Mjolnir now processes the request in the background without launching the UI. A toast notification confirms the result.
+
+### Improvements
+*   Sharing from the in-app steamdb.info browser now keeps the app open instead of closing it after the operation.
+
+### Bug Fixes
+*   Fixed a bug that caused the app to launch in a small, non-resizable window, and prevented it from responding to device rotation.
+*   Corrected two typos in the code (`FLAG_MUTABLE` and `empty_set`) that were causing build errors.
+
 ## [0.1.2] - 2024-07-27
 
 ### Changed

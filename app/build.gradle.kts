@@ -14,8 +14,8 @@ android {
         applicationId = "xyz.blacksheep.mjolnir"
         minSdk = 24
         targetSdk = 36
-        versionCode = 2
-        versionName = "0.1.2"
+        versionCode = 3
+        versionName = "0.1.3"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -55,6 +55,7 @@ dependencies {
     implementation("androidx.documentfile:documentfile:1.0.1")
     implementation("io.coil-kt:coil-compose:2.6.0")
     implementation("androidx.browser:browser:1.8.0")
+    implementation(libs.androidx.compose.runtime.saveable)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
