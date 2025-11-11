@@ -4,16 +4,17 @@
 
 Mjolnir is a utility application designed specifically for the **AYN Thor** dual-screen Android gaming handheld - but should work with all Android devices running Android 7.0 or later.
 
-This initial release, **v0.1.2**, delivers the **Steam File Generator** tool, streamlining the process of adding your emulated Steam library to frontends (currently ES-DE and Beacon Game Launcher are supported).
+This release, **v0.1.3**, delivers the **Steam File Generator** tool, streamlining the process of adding your emulated Steam library to frontends (currently ES-DE and Beacon Game Launcher are supported).
 
 ---
 
-## ✨ Features in v0.1.2: Steam File Generator
+## ✨ Features in v0.1.3: Steam File Generator
 
 This version focuses on providing a robust and seamless way to create the necessary files to launch PC games through your Android frontend of choice.
 
 * **Automated File Creation:** Quickly generates `.steam` files containing the necessary Steam AppID to launch games.
 * **Steam API Integration:** Fetches official **game names** and **header images** from the public Steam Store API.
+* **Fire-and-Forget Sharing:** When you share a URL from another app, Mjolnir now processes the request in the background without launching the UI. A toast notification confirms the result.
 * **Dual Input Methods:**
     * **Share Intent:** Accepts shared URLs from SteamDB.info and automatically extracts the AppID.
     * **Manual Entry:** Allows direct input of a Steam AppID.
@@ -24,6 +25,8 @@ This version focuses on providing a robust and seamless way to create the necess
 * **Theming and Preferences:**
     * The Settings menu allows the user to **change the ROMs directory** at any time and select a Light, Dark, or System default theme.
     * The settings screen is now fully scrollable and features a modern back button in the top app bar.
+* **Developer Mode:**
+    * A new "Manual Entry" option is available in developer mode, allowing for the creation of custom `.steam` files.
 
 ---
 
@@ -37,7 +40,7 @@ Mjolnir is designed for simplicity, allowing you to add PC games to your Android
 |:----------------------------------------------------------------------------------------------|:--------------------------------------------------------------------------|
 | **1.** Navigate to the game on **`steamdb.info`** in your browser.                            | **1.** Open Mjolnir and locate the **AppID input field**.                 |
 | **2.** Use your browser's **"Share..."** function to send the game's URL directly to Mjolnir. | **2.** Find the game's **AppID** (a unique number) on **`steamdb.info`**. |
-| **3.** Mjolnir will automatically grab the AppID and game title.                              | **3.** Type the AppID into the field and tap **"Search"**.                |
+| **3.** Mjolnir will automatically grab the AppID and game title, and create the file in the background. A toast will confirm the result.                              | **3.** Type the AppID into the field and tap **"Search"**.                |
 
 ### Step 2: Generate and Complete the File
 
