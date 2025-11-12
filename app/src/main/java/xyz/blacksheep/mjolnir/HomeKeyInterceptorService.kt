@@ -24,7 +24,12 @@ class HomeKeyInterceptorService : AccessibilityService(), SharedPreferences.OnSh
     override fun onKeyEvent(event: KeyEvent): Boolean {
         val isInterceptionActive = prefs.getBoolean(SteamFileGenActivity.KEY_HOME_INTERCEPTION_ACTIVE, false)
 
-        if (isInterceptionActive && event.keyCode == KeyEvent.KEYCODE_HOME && event.action == KeyEvent.ACTION_UP) {
+        // The AYN button on the Thor also reports as KEYCODE_HOME.
+        // We need to check the scancode to differentiate them.
+        // Home button scancode is 102, AYN button is 194.
+        val isActualHomeButton = event.scanCode == 102
+
+        if (isInterceptionActive && event.keyCode == KeyEvent.KEYCODE_HOME && isActualHomeButton && event.action == KeyEvent.ACTION_UP) {
             handleHomeKey()
             return true // Consume the event
         }

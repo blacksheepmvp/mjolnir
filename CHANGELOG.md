@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.1] - 2024-07-30
+
+### Bug Fixes
+*   Fixed major bugs related to the AYN button and the TCC panel.
+
 ## [0.2.0] - 2024-07-29
 
 ### Features

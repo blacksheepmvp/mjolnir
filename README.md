@@ -4,7 +4,7 @@
 
 Mjolnir is a utility application designed specifically for the **AYN Thor** dual-screen Android gaming handheld, but it should work with any Android device running Android 7.0 or later.
 
-This release, **v0.2.0**, introduces the core feature of Mjolnir: the **Dual-Screen Home Launcher**. It also includes the previously released **Steam File Generator** tool.
+This release, **v0.2.1**, introduces the core feature of Mjolnir: the **Dual-Screen Home Launcher**. It also includes the previously released **Steam File Generator** tool.
 
 ---
 
@@ -23,10 +23,6 @@ Currently, a firmware bug on the AYN Thor breaks the Recents/App Switcher screen
     *   **Tile OFF:** Your default launcher (e.g., QuickStep) will handle the Home button press.
 
 This setup ensures you can use the dual-launcher feature while retaining full access to the App Switcher. This workaround will not be needed once AYN fixes the App Switcher bug in an OTA update.
-
-### Known Issues
-
-*   **AYN Button Conflict:** After opening the TCC panel with the AYN button, the button may not close it. **Pressing Home twice** will close the panel and restore the AYN button's function.
 
 ---
 
