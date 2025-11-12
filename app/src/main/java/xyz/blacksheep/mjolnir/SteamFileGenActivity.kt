@@ -1,5 +1,3 @@
-@file:Suppress("AssignedValueIsNeverRead")
-
 package xyz.blacksheep.mjolnir
 
 import android.app.PendingIntent
@@ -7,6 +5,7 @@ import android.content.Intent
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Bundle
+import android.provider.Settings
 import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -40,15 +39,12 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -100,6 +96,7 @@ import xyz.blacksheep.mjolnir.ui.theme.MjolnirTheme
 private const val ACTION_CCT_URL_RETURN = "xyz.blacksheep.mjolnir.ACTION_CCT_URL_RETURN"
 
 enum class AppTheme { LIGHT, DARK, SYSTEM }
+enum class MainScreen { TOP, BOTTOM }
 
 val GameInfoSaver = Saver<GameInfo, List<String>>(
     save = { listOf(it.appId, it.name, it.headerImage) },
@@ -267,7 +264,7 @@ class SteamFileGenActivity : ComponentActivity() {
 
         return@withContext try {
             val gameInfo = SteamTool.fetchGameInfo(appId)
-            val existingContent = SteamTool.readSteamFileContent(this@SteamFileGenActivity, romsDirUri, "${gameInfo.name}.steam")
+            val existingContent = SteamTool.readSteamFileContent(this@SteamFileGenActivity, romsDirUri, "${'$'}{gameInfo.name}.steam")
 
             when (existingContent) {
                 null -> {
@@ -280,11 +277,11 @@ class SteamFileGenActivity : ComponentActivity() {
                     )
                 }
                 gameInfo.appId -> {
-                    "${gameInfo.name}.steam already exists"
+                    "${'$'}{gameInfo.name}.steam already exists"
                 }
                 else -> {
                     // Overwrite case - for headless we'll just report the conflict
-                    "Conflict: ${gameInfo.name}.steam exists with a different AppID"
+                    "Conflict: ${'$'}{gameInfo.name}.steam exists with a different AppID"
                 }
             }
         } catch (e: Exception) {
@@ -342,6 +339,11 @@ class SteamFileGenActivity : ComponentActivity() {
         var confirmDelete by rememberSaveable { mutableStateOf(prefs.getBoolean(KEY_CONFIRM_DELETE, true)) }
         var autoCreateFile by rememberSaveable { mutableStateOf(prefs.getBoolean(KEY_AUTO_CREATE_FILE, true)) }
         var devMode by rememberSaveable { mutableStateOf(prefs.getBoolean(KEY_DEV_MODE, false)) }
+        var topApp by rememberSaveable { mutableStateOf(prefs.getString(KEY_TOP_APP, null)) }
+        var bottomApp by rememberSaveable { mutableStateOf(prefs.getString(KEY_BOTTOM_APP, null)) }
+        var showAllApps by rememberSaveable { mutableStateOf(prefs.getBoolean(KEY_SHOW_ALL_APPS, false)) }
+        val initialMainScreenName = prefs.getString(KEY_MAIN_SCREEN, MainScreen.TOP.name)
+        var mainScreen by rememberSaveable { mutableStateOf(MainScreen.valueOf(initialMainScreenName ?: MainScreen.TOP.name)) }
 
         var multiSelectMode by rememberSaveable { mutableStateOf(false) }
         var selectedFiles by rememberSaveable { mutableStateOf<Set<String>>(emptySet()) }
@@ -349,7 +351,6 @@ class SteamFileGenActivity : ComponentActivity() {
 
         var showSettings by rememberSaveable { mutableStateOf(false) }
         var showAboutDialog by rememberSaveable { mutableStateOf(false) }
-        var menuExpanded by rememberSaveable { mutableStateOf(false) }
         var steamFiles by rememberSaveable { mutableStateOf<List<String>>(emptyList()) }
         var fileCreationResult by rememberSaveable { mutableStateOf<String?>(null) }
 
@@ -391,7 +392,7 @@ class SteamFileGenActivity : ComponentActivity() {
 
         suspend fun createSteamFile(gameInfo: GameInfo) {
             romsDirectoryUri.let { dirUri ->
-                val existingContent = SteamTool.readSteamFileContent(context, dirUri, "${gameInfo.name}.steam")
+                val existingContent = SteamTool.readSteamFileContent(context, dirUri, "${'$'}{gameInfo.name}.steam")
                 if (existingContent == null) {
                     val result = SteamTool.createSteamFileFromDetails(context, dirUri, gameInfo.name, gameInfo.appId, "steam")
                     fileCreationResult = result
@@ -449,7 +450,7 @@ class SteamFileGenActivity : ComponentActivity() {
                     for (fileName in selectedFiles) {
                         SteamTool.deleteSteamFile(context, uri, fileName)
                     }
-                    fileCreationResult = "Deleted ${selectedFiles.size} files."
+                    fileCreationResult = "Deleted ${'$'}{selectedFiles.size} files."
                     refreshFileList(uri)
                     multiSelectMode = false
                     selectedFiles = emptySet()
@@ -494,6 +495,39 @@ class SteamFileGenActivity : ComponentActivity() {
                             onDevModeChange = { newDevMode ->
                                 prefs.edit { putBoolean(KEY_DEV_MODE, newDevMode) }
                                 devMode = newDevMode
+                            },
+                            topApp = topApp,
+                            onTopAppChange = { newTopApp ->
+                                prefs.edit { putString(KEY_TOP_APP, newTopApp) }
+                                topApp = newTopApp
+                            },
+                            bottomApp = bottomApp,
+                            onBottomAppChange = { newBottomApp ->
+                                prefs.edit { putString(KEY_BOTTOM_APP, newBottomApp) }
+                                bottomApp = newBottomApp
+                            },
+                            showAllApps = showAllApps,
+                            onShowAllAppsChange = { newShowAllApps ->
+                                prefs.edit { putBoolean(KEY_SHOW_ALL_APPS, newShowAllApps) }
+                                showAllApps = newShowAllApps
+                            },
+                            onSetDefaultHome = {
+                                val intent = Intent(Settings.ACTION_HOME_SETTINGS)
+                                context.startActivity(intent)
+                            },
+                            onLaunchDualScreen = {
+                                val launcherApps = getLaunchableApps(context, showAllApps)
+                                val top = launcherApps.find { it.packageName == topApp }
+                                val bottom = launcherApps.find { it.packageName == bottomApp }
+                                if (top != null && bottom != null) {
+                                    DualScreenLauncher.launchOnDualScreens(context, top.launchIntent, bottom.launchIntent, mainScreen)
+                                }
+                            },
+                            mainScreen = mainScreen,
+                            onMainScreenChange = {
+                                newMainScreen ->
+                                prefs.edit { putString(KEY_MAIN_SCREEN, newMainScreen.name) }
+                                mainScreen = newMainScreen
                             }
                         )
                     } else {
@@ -545,30 +579,11 @@ class SteamFileGenActivity : ComponentActivity() {
                     }
 
                     if (!showSettings && !multiSelectMode) {
-                        Box(modifier = Modifier.padding(4.dp)) {
-                            IconButton(onClick = { menuExpanded = true }) {
-                                Icon(Icons.Default.Menu, contentDescription = "Menu")
-                            }
-                            DropdownMenu(
-                                expanded = menuExpanded,
-                                onDismissRequest = { menuExpanded = false }
-                            ) {
-                                DropdownMenuItem(
-                                    text = { Text("Settings") },
-                                    onClick = {
-                                        showSettings = true
-                                        menuExpanded = false
-                                    }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("About") },
-                                    onClick = {
-                                        showAboutDialog = true
-                                        menuExpanded = false
-                                    }
-                                )
-                            }
-                        }
+                        HamburgerMenu(
+                            onSettingsClick = { showSettings = true },
+                            onAboutClick = { showAboutDialog = true },
+                            onQuitClick = { finish() }
+                        )
                     }
                 }
             }
@@ -636,6 +651,21 @@ class SteamFileGenActivity : ComponentActivity() {
                 onDismiss = { showAboutDialog = false }
             )
         }
+    }
+
+    companion object {
+        const val PREFS_NAME = "MjolnirPrefs"
+        const val KEY_THEME = "theme"
+        const val KEY_ROM_DIR_URI = "rom_dir_uri"
+        const val KEY_CONFIRM_DELETE = "confirm_delete"
+        const val KEY_AUTO_CREATE_FILE = "auto_create_file"
+        const val KEY_DEV_MODE = "dev_mode"
+        const val KEY_TOP_APP = "top_app"
+        const val KEY_BOTTOM_APP = "bottom_app"
+        const val KEY_SHOW_ALL_APPS = "show_all_apps"
+        const val KEY_MAIN_SCREEN = "main_screen"
+        const val KEY_HOME_INTERCEPTION_ACTIVE = "home_interception_active"
+        const val KEY_SWAP_SCREENS_REQUESTED = "swap_screens_requested"
     }
 }
 
@@ -713,10 +743,10 @@ fun OverwriteConfirmationDialog(
         title = { Text("Overwrite File?") },
         text = {
             Column {
-                Text("A file named \"${overwriteInfo.gameInfo.name}.steam\" already exists with a different AppID.")
+                Text("A file named \"${'$'}{overwriteInfo.gameInfo.name}.steam\" already exists with a different AppID.")
                 Spacer(modifier = Modifier.height(16.dp))
-                Text("Old AppID: ${overwriteInfo.oldAppId}")
-                Text("New AppID: ${overwriteInfo.gameInfo.appId}")
+                Text("Old AppID: ${'$'}{overwriteInfo.oldAppId}")
+                Text("New AppID: ${'$'}{overwriteInfo.gameInfo.appId}")
             }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
@@ -765,7 +795,7 @@ private fun SearchUi(
                         Text(it, modifier = Modifier.padding(top = 8.dp), color = color, textAlign = TextAlign.Center)
                     }
                 }
-                is UiState.Failure -> Text("Error: ${uiState.error}", color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center)
+                is UiState.Failure -> Text("Error: ${'$'}{uiState.error}", color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center)
             }
         }
     }
@@ -975,7 +1005,7 @@ fun MainScreenPreviewLandscape() {
 @Preview(showBackground = true)
 @Composable
 fun SettingsPreview() {
-    MjolnirTheme { SettingsScreen("/path/to/roms", AppTheme.SYSTEM, {}, {}, {}, true, {}, true, {}, false, {}) }
+    MjolnirTheme { SettingsScreen("/path/to/roms", AppTheme.SYSTEM, {}, {}, {}, true, {}, true, {}, false, {}, null, {}, null, {}, false, {}, {}, {}, MainScreen.TOP, {}) }
 }
 
 @Preview(showBackground = true)

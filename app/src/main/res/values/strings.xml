@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">Mjolnir</string>
+    <string name="mjolnir_home_tile_label">Mjolnir Home</string>
+    <string name="flip_screens_tile_label">Swap Screens</string>
 </resources>
