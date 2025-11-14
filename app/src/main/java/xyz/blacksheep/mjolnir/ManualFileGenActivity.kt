@@ -1,26 +1,40 @@
 package xyz.blacksheep.mjolnir
 
-import android.content.Intent
-import android.net.Uri
 import android.os.Bundle
+import android.view.inputmethod.EditorInfo
+import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
@@ -31,16 +45,19 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
-import androidx.core.content.edit
 import androidx.core.net.toUri
 import androidx.core.view.WindowCompat
 import kotlinx.coroutines.launch
-import xyz.blacksheep.mjolnir.settings.*
-import xyz.blacksheep.mjolnir.ui.theme.*
-import xyz.blacksheep.mjolnir.utils.*
+import xyz.blacksheep.mjolnir.settings.AppTheme
+import xyz.blacksheep.mjolnir.ui.theme.MjolnirTheme
+import xyz.blacksheep.mjolnir.utils.SteamTool
 
 @OptIn(ExperimentalMaterial3Api::class)
 class ManualFileGenActivity : ComponentActivity() {
@@ -49,8 +66,9 @@ class ManualFileGenActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
 
+        val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+
         setContent {
-            val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
             val initialThemeName = prefs.getString(KEY_THEME, AppTheme.SYSTEM.name)
             val theme by rememberSaveable { mutableStateOf(AppTheme.valueOf(initialThemeName ?: AppTheme.SYSTEM.name)) }
             val useDarkTheme = when (theme) {
@@ -68,107 +86,202 @@ class ManualFileGenActivity : ComponentActivity() {
             }
 
             MjolnirTheme(darkTheme = useDarkTheme) {
-                var romsDirectoryUri by rememberSaveable { mutableStateOf(prefs.getString(KEY_ROM_DIR_URI, null)?.toUri()) }
+                ManualEntryScreen(
+                    defaultRomPath = prefs.getString(KEY_ROM_DIR_URI, "") ?: "",
+                    onClose = { finish() } // Close the activity when ManualEntryScreen requests close
+                )
+            }
+        }
+    }
 
-                val directoryPickerLauncher = rememberLauncherForActivityResult(
-                    contract = ActivityResultContracts.OpenDocumentTree(),
-                    onResult = { uri: Uri? ->
-                        if (uri != null) {
-                            contentResolver.takePersistableUriPermission(
-                                uri,
-                                Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-                            )
-                            prefs.edit { putString(KEY_ROM_DIR_URI, uri.toString()) }
-                            romsDirectoryUri = uri
+    @Suppress("AssignedValueIsNeverRead")
+    @OptIn(ExperimentalMaterial3Api::class)
+    @Composable
+    private fun ManualEntryScreen(
+        defaultRomPath: String,
+        onClose: () -> Unit,
+    ) {
+        var gameTitle by rememberSaveable { mutableStateOf("") }
+        var fileContents by rememberSaveable { mutableStateOf("") }
+        var fileExtension by rememberSaveable { mutableStateOf(".steam") }
+        var useDefaultDir by rememberSaveable { mutableStateOf(true) }
+        var showInfoDialog by rememberSaveable { mutableStateOf(false) }
+        var customDir by rememberSaveable { mutableStateOf<String?>(null) }
+
+        val context = LocalContext.current
+        val scope = rememberCoroutineScope()
+        val focusManager = LocalFocusManager.current
+
+        val isExtensionValid = rememberSaveable(fileExtension) { fileExtension.matches(Regex("^\\.[a-zA-Z0-9]+$")) }
+        val isSaveEnabled = gameTitle.isNotBlank() && isExtensionValid && (useDefaultDir || customDir != null)
+
+        val directoryPickerLauncher = rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.OpenDocumentTree(),
+            onResult = { uri ->
+                uri?.let { customDir = it.toString() }
+            }
+        )
+
+        BackHandler { onClose() }
+
+        if (showInfoDialog) {
+            AlertDialog(
+                onDismissRequest = { showInfoDialog = false },
+                title = { Text("About File Extensions") },
+                text = { Text("The file extension determines how your frontend will treat the file. For most cases, '.steam' is the correct choice. However, you can use other extensions like '.iso', '.txt', or any other extension your frontend supports.") },
+                confirmButton = {
+                    TextButton(onClick = { showInfoDialog = false }) {
+                        Text("OK")
+                    }
+                }
+            )
+        }
+
+        Scaffold(
+            topBar = {
+                Surface(tonalElevation = 2.dp) {
+                    TopAppBar(
+                        title = { Text("Manual File Generator") },
+                        navigationIcon = {
+                            IconButton(onClick = onClose) {
+                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                            }
+                        },
+                        actions = {
+                            IconButton(
+                                onClick = {
+                                    scope.launch {
+                                        val sanitizedTitle = gameTitle.replace(Regex("[\\/:*? \" <>|]"), "")
+                                        val directory = if (useDefaultDir) defaultRomPath.toUri() else customDir?.toUri()
+                                        val extension = fileExtension.removePrefix(".")
+
+                                        if (directory != null) {
+                                            val result = SteamTool.createSteamFileFromDetails(context, directory, sanitizedTitle, fileContents, extension)
+                                            if (result.startsWith("Success")) {
+                                                Toast.makeText(context, "$sanitizedTitle.$extension created.", Toast.LENGTH_SHORT).show()
+                                                gameTitle = ""
+                                                fileContents = ""
+                                            } else {
+                                                Toast.makeText(context, "Not created: $sanitizedTitle.$extension. Error: $result", Toast.LENGTH_LONG).show()
+                                            }
+                                        } else {
+                                            Toast.makeText(context, "Error: No directory selected.", Toast.LENGTH_LONG).show()
+                                        }
+                                    }
+                                },
+                                enabled = isSaveEnabled
+                            ) {
+                                Icon(Icons.Default.Add, contentDescription = "Save")
+                            }
+                        }
+                    )
+                }
+            }
+        ) { innerPadding ->
+            Column(
+                modifier = Modifier
+                    .padding(innerPadding)
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                // 🛠 Modified
+                OutlinedTextField(
+                    value = gameTitle,
+                    onValueChange = { gameTitle = it },
+                    label = { Text("Game Title") },
+                    modifier = Modifier.fillMaxWidth(),
+                    isError = gameTitle.isBlank(),
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions.Default.copy(
+                        imeAction = ImeAction.Next,
+                    ),
+                    keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) })
+                )
+
+                // 🛠 Modified
+                OutlinedTextField(
+                    value = fileContents,
+                    onValueChange = { fileContents = it },
+                    label = { Text("Contents") },
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 3,
+                    keyboardOptions = KeyboardOptions.Default.copy(
+                        imeAction = ImeAction.Default,
+                    )
+                )
+
+                OutlinedTextField(
+                    value = fileExtension,
+                    onValueChange = { fileExtension = it },
+                    label = { Text("File Extension") },
+                    modifier = Modifier.fillMaxWidth(),
+                    isError = !isExtensionValid,
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions.Default.copy(
+                        imeAction = ImeAction.Done,
+                    ),
+                    keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+                    trailingIcon = {
+                        IconButton(onClick = { showInfoDialog = true }) {
+                            Icon(Icons.Default.Info, contentDescription = "Info")
                         }
                     }
                 )
 
-                if (romsDirectoryUri == null) {
-                    SetupScreen(onPickDirectory = { directoryPickerLauncher.launch(null) })
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Use default ROMs directory", modifier = Modifier.weight(1f))
+                    Switch(checked = useDefaultDir, onCheckedChange = { useDefaultDir = it })
+                }
+
+                if (useDefaultDir) {
+                    Text(text = defaultRomPath, style = MaterialTheme.typography.bodySmall)
                 } else {
-                    ManualEntryContent(romsDirectoryUri!!)
+                    Button(onClick = { directoryPickerLauncher.launch(null) }) {
+                        Text(customDir ?: "Choose Directory")
+                    }
                 }
             }
         }
     }
 
     @Composable
-    private fun ManualEntryContent(romsDirUri: Uri) {
-        var uiState by rememberSaveable(stateSaver = UiStateSaver) { mutableStateOf(UiState.Idle) }
-        val scope = rememberCoroutineScope()
-        val context = LocalContext.current
-        var overwriteInfo by rememberSaveable(stateSaver = OverwriteInfoSaver) { mutableStateOf<OverwriteInfo?>(null) }
-        var fileCreationResult by rememberSaveable { mutableStateOf<String?>(null) }
+    private fun NoExtractOutlinedTextField(
+        value: String,
+        onValueChange: (String) -> Unit,
+        label: @Composable (() -> Unit)? = null,
+        modifier: Modifier = Modifier,
+        isError: Boolean = false,
+        singleLine: Boolean = false,
+        minLines: Int = 1,
+        keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
+        keyboardActions: KeyboardActions = KeyboardActions.Default,
+        trailingIcon: @Composable (() -> Unit)? = null,
+    ) {
+        val view = LocalView.current
 
-        suspend fun createSteamFile(gameInfo: GameInfo) {
-            val existingContent = SteamTool.readSteamFileContent(context, romsDirUri, "${gameInfo.name}.steam")
-            if (existingContent == null) {
-                val result = SteamTool.createSteamFileFromDetails(context, romsDirUri, gameInfo.name, gameInfo.appId, "steam")
-                fileCreationResult = result
-            } else if (existingContent == gameInfo.appId) {
-                fileCreationResult = "File is already up to date."
-            } else {
-                overwriteInfo = OverwriteInfo(gameInfo, existingContent)
-            }
-        }
-
-        val searchForGame: (String) -> Unit = { appId ->
-            scope.launch {
-                fileCreationResult = null
-                if (appId.isBlank()) {
-                    uiState = UiState.Failure("AppID cannot be empty.")
-                    return@launch
-                }
-                uiState = UiState.Loading(appId)
-                runCatching { SteamTool.fetchGameInfo(appId) }
-                    .onSuccess { gameInfo -> uiState = UiState.Success(gameInfo) }
-                    .onFailure { e -> uiState = UiState.Failure(e.message ?: "Unknown error") }
-            }
-        }
-
-        Scaffold(
-            topBar = {
-                TopAppBar(
-                    title = { Text("Manual File Generator") },
-                    navigationIcon = {
-                        IconButton(onClick = { finish() }) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                        }
-                    }
-                )
-            }
-        ) { innerPadding ->
-            Surface(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
-                Column(
-                    modifier = Modifier.fillMaxSize().padding(16.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    SearchUi(
-                        uiState = uiState,
-                        fileCreationResult = fileCreationResult,
-                        onCreateFile = { gameInfo -> scope.launch { createSteamFile(gameInfo) } },
-                        modifier = Modifier.height(220.dp)
-                    )
-                    Spacer(Modifier.height(16.dp))
-                    ManualInputUi(onSearch = searchForGame)
-                }
-            }
-        }
-
-        if (overwriteInfo != null) {
-            OverwriteConfirmationDialog(
-                overwriteInfo = overwriteInfo!!,
-                onDismiss = { overwriteInfo = null },
-                onConfirm = {
-                    scope.launch {
-                        val result = SteamTool.createSteamFileFromDetails(context, romsDirUri, overwriteInfo!!.gameInfo.name, overwriteInfo!!.gameInfo.appId, "steam")
-                        fileCreationResult = result
-                        overwriteInfo = null
+        OutlinedTextField(
+            value = value,
+            onValueChange = onValueChange,
+            label = label,
+            modifier = modifier.onGloballyPositioned {
+                // Set the IME flag directly when the native EditText is created
+                view.findFocus()?.let { focusedView ->
+                    if (focusedView is android.widget.EditText) {
+                        focusedView.imeOptions = focusedView.imeOptions or EditorInfo.IME_FLAG_NO_EXTRACT_UI
                     }
                 }
-            )
-        }
+            },
+            isError = isError,
+            singleLine = singleLine,
+            minLines = minLines,
+            keyboardOptions = keyboardOptions,
+            keyboardActions = keyboardActions,
+            trailingIcon = trailingIcon
+        )
     }
 }
-    

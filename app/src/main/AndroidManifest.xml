@@ -3,12 +3,16 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+
     <queries>
         <intent>
             <action android:name="android.intent.action.MAIN" />
         </intent>
     </queries>
     <application
+        android:name=".MjolnirApp"
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
@@ -47,7 +51,7 @@
         </activity>
         <activity
             android:name=".ManualFileGenActivity"
-            android:exported="false"
+            android.exported="false"
             android:theme="@style/Theme.Mjolnir" />
         <activity
             android:name=".HomeActivity"
@@ -74,7 +78,7 @@
         <service
             android:name=".SwapScreensTileService"
             android:exported="true"
-            android:icon="@drawable/ic_refresh"
+            android.icon="@drawable/ic_refresh"
             android:label="@string/flip_screens_tile_label"
             android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
             <intent-filter>
@@ -94,6 +98,11 @@
                 android:name="android.accessibilityservice"
                 android:resource="@xml/accessibility_service_config" />
         </service>
+
+        <service
+            android:name=".services.KeepAliveService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
 
     </application>
 

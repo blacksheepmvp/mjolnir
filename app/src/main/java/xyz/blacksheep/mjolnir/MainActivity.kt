@@ -1,12 +1,15 @@
 package xyz.blacksheep.mjolnir
 
+import android.Manifest
 import android.app.Activity
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -29,6 +32,7 @@ import kotlinx.coroutines.launch
 import xyz.blacksheep.mjolnir.ui.theme.MjolnirTheme
 import xyz.blacksheep.mjolnir.settings.*
 import xyz.blacksheep.mjolnir.utils.*
+import xyz.blacksheep.mjolnir.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 class MainActivity : ComponentActivity() {
@@ -64,11 +68,21 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
+            val requestPermissionLauncher = rememberLauncherForActivityResult(
+                ActivityResultContracts.RequestPermission()
+            ) { isGranted: Boolean ->
+                if (isGranted) {
+                    Toast.makeText(this, "Notification permission granted", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(this, "Notification permission denied", Toast.LENGTH_SHORT).show()
+                }
+            }
+
             MjolnirTheme(darkTheme = useDarkTheme) {
                 var showSettings by rememberSaveable { mutableStateOf(false) }
                 var settingsStartDestination by rememberSaveable { mutableStateOf ("main") }
                 var showAboutDialog by rememberSaveable { mutableStateOf(false) }
-                //var showManualEntry by rememberSaveable { mutableStateOf(false) }
+                var showHomeSetup by rememberSaveable { mutableStateOf(false) }
                 var menuExpanded by remember { mutableStateOf(false) }
 
                 var confirmDelete by rememberSaveable { mutableStateOf(prefs.getBoolean(KEY_CONFIRM_DELETE, true)) }
@@ -140,9 +154,7 @@ class MainActivity : ComponentActivity() {
                                     icon = Icons.Default.Home,
                                     title = "Setup Home Launcher",
                                     subtitle = "Configure the home launcher for dual-screen mode",
-                                    onClick = {
-                                        Toast.makeText(this@MainActivity, "Setup Home Launcher clicked", Toast.LENGTH_SHORT).show()
-                                    }
+                                    onClick = { showHomeSetup = true }
                                 )
                             }
                             item {
@@ -184,26 +196,26 @@ class MainActivity : ComponentActivity() {
                                 )
                             }
                         }
-
-                        /*
-                        Column(
-                            modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
-                            verticalArrangement = Arrangement.Center,
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Button(onClick = {
-                                val intent = Intent(this@MainActivity, SteamFileGenActivity::class.java)
-                                startActivity(intent)
-                            }) {
-                                Text("Launch Steam File Generator")
-                            }
-                            Spacer(Modifier.height(16.dp))
-                            Button(onClick = { showManualEntry = true }) {
-                                Text("Manual Entry")
-                            }
-                        }
-                        */
                     }
+                }
+
+                if (showHomeSetup) {
+                    HomeSetup(
+                        onGrantPermissionClick = {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                            }
+                        },
+                        onEnableAccessibilityClick = {
+                            val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                            startActivity(intent)
+                        },
+                        onEnableHomeInterceptionClick = {
+                            prefs.edit { putBoolean(KEY_HOME_INTERCEPTION_ACTIVE, true) }
+                        },
+                        onTestNotificationClick = { showTestNotification(this) },
+                        onClose = { showHomeSetup = false }
+                    )
                 }
 
                 if (showSettings) {

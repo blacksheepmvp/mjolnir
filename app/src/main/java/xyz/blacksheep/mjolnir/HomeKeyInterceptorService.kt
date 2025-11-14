@@ -1,27 +1,43 @@
 package xyz.blacksheep.mjolnir
 
 import android.accessibilityservice.AccessibilityService
+import android.content.Intent
 import android.content.SharedPreferences
+import android.os.Handler
+import android.os.Looper
+import android.util.Log
 import android.view.KeyEvent
 import android.view.accessibility.AccessibilityEvent
+import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
-import xyz.blacksheep.mjolnir.utils.*
+import xyz.blacksheep.mjolnir.services.KeepAliveService
 import xyz.blacksheep.mjolnir.settings.*
 import xyz.blacksheep.mjolnir.ui.theme.*
+import xyz.blacksheep.mjolnir.utils.*
 
 class HomeKeyInterceptorService : AccessibilityService(), SharedPreferences.OnSharedPreferenceChangeListener {
 
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private lateinit var prefs: SharedPreferences
+    private var instance: HomeKeyInterceptorService? = null
 
     override fun onServiceConnected() {
         super.onServiceConnected()
+        Log.d(TAG, "Accessibility service connected")
+        instance = this
         prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
         prefs.registerOnSharedPreferenceChangeListener(this)
+
+        // Start the foreground KeepAliveService to keep this process alive.
+        // A small delay is required on some devices to avoid a crash.
+        Handler(Looper.getMainLooper()).postDelayed({
+            val intent = Intent(this, KeepAliveService::class.java)
+            ContextCompat.startForegroundService(this, intent)
+        }, 250)
     }
 
     override fun onKeyEvent(event: KeyEvent): Boolean {
@@ -57,52 +73,13 @@ class HomeKeyInterceptorService : AccessibilityService(), SharedPreferences.OnSh
             }
         }
     }
-/*
-    private fun handleSwapScreen() {
-        val dm = getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
-        val displays = dm.displays
-
-        if (displays.size < 2) return // Not a dual-screen device
-
-        val topDisplayId = displays[0].displayId
-        val bottomDisplayId = displays[1].displayId
-
-        val topAppPkg = getTopPackageOnDisplay(topDisplayId)
-        val bottomAppPkg = getTopPackageOnDisplay(bottomDisplayId)
-
-        if (topAppPkg != null && bottomAppPkg != null) {
-            val topIntent = packageManager.getLaunchIntentForPackage(topAppPkg)
-            val bottomIntent = packageManager.getLaunchIntentForPackage(bottomAppPkg)
-
-            if (topIntent != null && bottomIntent != null) {
-                val mainScreen = MainScreen.valueOf(prefs.getString(SteamFileGenActivity.KEY_MAIN_SCREEN, MainScreen.TOP.name) ?: MainScreen.TOP.name)
-
-                serviceScope.launch {
-                    DualScreenLauncher.launchOnDualScreens(
-                        this@HomeKeyInterceptorService,
-                        topIntent = bottomIntent, // Launch bottom app's intent on the top screen
-                        bottomIntent = topIntent,   // Launch top app's intent on the bottom screen
-                        mainScreen = mainScreen
-                    )
-                }
-            }
-        }
-    }
-
-    private fun getTopPackageOnDisplay(displayId: Int): String? {
-        return windows
-            .filter { it.displayId == displayId && it.type == AccessibilityWindowInfo.TYPE_APPLICATION && it.root != null }
-            .maxByOrNull { it.layer }
-            ?.root?.packageName?.toString()
-    }
-*/
 
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
         // We can listen for window changes to be more reactive if needed, but polling on demand is simpler.
     }
 
     override fun onSharedPreferenceChanged(sharedPreferences: SharedPreferences?, key: String?) {
-/*        if (key == SteamFileGenActivity.KEY_SWAP_SCREENS_REQUESTED) {
+        /*if (key == SteamFileGenActivity.KEY_SWAP_SCREENS_REQUESTED) {
             val shouldSwap = sharedPreferences?.getBoolean(key, false) ?: false
             if (shouldSwap) {
                 handleSwapScreen()
@@ -112,11 +89,35 @@ class HomeKeyInterceptorService : AccessibilityService(), SharedPreferences.OnSh
         }*/
     }
 
-    override fun onInterrupt() {}
+    override fun onInterrupt() {
+        Log.d(TAG, "Accessibility service interrupted")
+        instance = null
+    }
+
+    override fun onUnbind(intent: Intent?): Boolean {
+        Log.d(TAG, "Accessibility service unbound")
+        instance = null
+        stopKeepAliveService()
+        return super.onUnbind(intent)
+    }
 
     override fun onDestroy() {
         super.onDestroy()
+        stopKeepAliveService()
         prefs.unregisterOnSharedPreferenceChangeListener(this)
         serviceScope.cancel()
+    }
+
+    private fun stopKeepAliveService() {
+        try {
+            val intent = Intent(this, KeepAliveService::class.java)
+            stopService(intent)
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to stop KeepAliveService", e)
+        }
+    }
+
+    companion object {
+        private const val TAG = "HomeKeyInterceptorService"
     }
 }

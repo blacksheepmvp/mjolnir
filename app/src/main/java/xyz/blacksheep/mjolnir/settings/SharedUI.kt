@@ -2,7 +2,6 @@ package xyz.blacksheep.mjolnir.settings
 
 //import androidx.compose.material.icons.Icons
 //import androidx.compose.ui.Alignment
-//import androidx.compose.ui.Modifier
 //import androidx.compose.ui.text.style.TextAlign
 import android.content.ComponentName
 import android.content.Context
@@ -22,9 +21,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
@@ -693,7 +694,7 @@ private fun HomeLauncherSettingsMenu(
             }
 
             item {
-                Column(Modifier.padding(horizontal = 16.dp, vertical = 20.dp)) {
+                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 20.dp)) {
                     Button(
                         onClick = onLaunchDualScreen,
                         enabled = topApp != null && bottomApp != null,
@@ -845,7 +846,86 @@ fun launchOnDualScreens(context: Context, topIntent: Intent, bottomIntent: Inten
 }
 
 @Composable
-fun SetupScreen(onPickDirectory: () -> Unit, modifier: Modifier = Modifier) {
+fun HomeSetup(
+    onGrantPermissionClick: () -> Unit,
+    onEnableAccessibilityClick: () -> Unit,
+    onEnableHomeInterceptionClick: () -> Unit,
+    onTestNotificationClick: () -> Unit,
+    onClose: () -> Unit
+) {
+    Surface(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = "Home Launcher Setup",
+                style = MaterialTheme.typography.headlineMedium,
+                textAlign = TextAlign.Center
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = "Step 1: Grant Notification Permission",
+                style = MaterialTheme.typography.titleMedium,
+                textAlign = TextAlign.Center
+            )
+            Text(
+                text = "Mjolnir requires notification permission for its background service to function correctly.",
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(8.dp)
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            Button(onClick = onGrantPermissionClick) {
+                Text("Grant Notification Permission")
+            }
+            Spacer(modifier = Modifier.height(32.dp))
+            Text(
+                text = "Step 2: Enable Accessibility Service",
+                style = MaterialTheme.typography.titleMedium,
+                textAlign = TextAlign.Center
+            )
+            Text(
+                text = "Mjolnir uses an accessibility service to intercept the Home button press.",
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(8.dp)
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            Button(onClick = onEnableAccessibilityClick) {
+                Text("Enable Accessibility Service")
+            }
+            Spacer(modifier = Modifier.height(32.dp))
+            Text(
+                text = "Step 3: Enable Home Interception",
+                style = MaterialTheme.typography.titleMedium,
+                textAlign = TextAlign.Center
+            )
+            Text(
+                text = "This allows Mjolnir to perform its special action when you press the home button.",
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(8.dp)
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            Button(onClick = onEnableHomeInterceptionClick) {
+                Text("Enable Home Interception")
+            }
+            Spacer(modifier = Modifier.height(32.dp))
+            Button(onClick = onTestNotificationClick) {
+                Text("Test Notification")
+            }
+            Spacer(modifier = Modifier.weight(1f))
+            Button(onClick = onClose) {
+                Text("Close")
+            }
+        }
+    }
+}
+
+@Composable
+fun SetupScreen(onPickDirectory: () -> Unit, onClose: () -> Unit, modifier: Modifier = Modifier) {
     Surface(modifier = modifier.fillMaxSize()) {
         Column(
             modifier = Modifier
@@ -854,10 +934,12 @@ fun SetupScreen(onPickDirectory: () -> Unit, modifier: Modifier = Modifier) {
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text("Mjolnir Setup", style = MaterialTheme.typography.headlineLarge, modifier = Modifier.padding(bottom = 16.dp))
+            Text("Steam File Generator Setup", style = MaterialTheme.typography.headlineLarge, modifier = Modifier.padding(bottom = 16.dp))
             Text("To begin, please select the directory where you store your Steam ROM files.", textAlign = TextAlign.Center)
             Spacer(Modifier.height(24.dp))
             Button(onClick = onPickDirectory) { Text("Choose Directory") }
+            Spacer(Modifier.height(8.dp))
+            TextButton(onClick = onClose) { Text("Skip") }
         }
     }
 }
@@ -873,7 +955,7 @@ fun OverwriteConfirmationDialog(
         title = { Text("Overwrite File?") },
         text = {
             Column {
-                Text("A file named \"${overwriteInfo.gameInfo.name}.steam\" already exists with a different AppID.")
+                Text("A file named '''${overwriteInfo.gameInfo.name}.steam''' already exists with a different AppID.")
                 Spacer(modifier = Modifier.height(16.dp))
                 Text("Old AppID: ${overwriteInfo.oldAppId}")
                 Text("New AppID: ${overwriteInfo.gameInfo.appId}")
