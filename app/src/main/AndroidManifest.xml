@@ -46,6 +46,10 @@
             </intent-filter>
         </activity>
         <activity
+            android:name=".ManualFileGenActivity"
+            android:exported="false"
+            android:theme="@style/Theme.Mjolnir" />
+        <activity
             android:name=".HomeActivity"
             android:exported="true">
             <intent-filter>
@@ -54,10 +58,6 @@
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
-        <activity
-            android:name=".QuickTileCollapseActivity"
-            android:exported="false"
-            android:theme="@style/Theme.Mjolnir.Transparent" />
 
         <service
             android:name=".MjolnirHomeTileService"

@@ -1,21 +1,30 @@
-package xyz.blacksheep.mjolnir
+package xyz.blacksheep.mjolnir.settings
 
+//import androidx.compose.material.icons.Icons
+//import androidx.compose.ui.Alignment
+//import androidx.compose.ui.Modifier
+//import androidx.compose.ui.text.style.TextAlign
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
-import android.os.Build
 import android.util.Log
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
@@ -23,9 +32,11 @@ import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -34,7 +45,9 @@ import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -49,18 +62,66 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import coil.compose.AsyncImage
+import xyz.blacksheep.mjolnir.utils.DualScreenLauncher
+import xyz.blacksheep.mjolnir.utils.GameInfo
+import xyz.blacksheep.mjolnir.utils.GameInfoSaver
+
+enum class AppTheme { LIGHT, DARK, SYSTEM }
+enum class MainScreen { TOP, BOTTOM }
+
+val UiStateSaver = Saver<UiState, Any>(
+    save = {
+        when (it) {
+            is UiState.Idle -> "Idle"
+            is UiState.Loading -> listOf("Loading", it.appId)
+            is UiState.Success -> with(GameInfoSaver) { save(it.gameInfo)?.let { list -> listOf("Success") + list } ?: error("Could not save GameInfo") }
+            is UiState.Failure -> listOf("Failure", it.error)
+        }
+    },
+    restore = {
+        when (val value = it as? List<*>) {
+            null -> UiState.Idle
+            else -> when (value[0]) {
+                "Loading" -> UiState.Loading(value[1] as String)
+                "Success" -> {
+                    @Suppress("UNCHECKED_CAST")
+                    GameInfoSaver.restore(value.drop(1) as? List<String> ?: emptyList())?.let { gameInfo ->
+                        UiState.Success(gameInfo)
+                    } ?: UiState.Idle
+                }
+                "Failure" -> UiState.Failure(value[1] as String)
+                else -> UiState.Idle
+            }
+        }
+    }
+)
+sealed interface UiState {
+    object Idle : UiState
+    data class Loading(val appId: String) : UiState
+    data class Success(val gameInfo: GameInfo) : UiState
+    data class Failure(val error: String) : UiState
+}
 
 @Composable
 fun HamburgerMenu(
@@ -128,6 +189,58 @@ fun SettingsScreen(
     mainScreen: MainScreen,
     onMainScreenChange: (MainScreen) -> Unit
 ) {
+    SettingsScreen(
+        startDestination = "main",
+        currentPath = currentPath,
+        currentTheme = currentTheme,
+        onThemeChange = onThemeChange,
+        onChangeDirectory = onChangeDirectory,
+        onClose = onClose,
+        confirmDelete = confirmDelete,
+        onConfirmDeleteChange = onConfirmDeleteChange,
+        autoCreateFile = autoCreateFile,
+        onAutoCreateFileChange = onAutoCreateFileChange,
+        devMode = devMode,
+        onDevModeChange = onDevModeChange,
+        topApp = topApp,
+        onTopAppChange = onTopAppChange,
+        bottomApp = bottomApp,
+        onBottomAppChange = onBottomAppChange,
+        showAllApps = showAllApps,
+        onShowAllAppsChange = onShowAllAppsChange,
+        onSetDefaultHome = onSetDefaultHome,
+        onLaunchDualScreen = onLaunchDualScreen,
+        mainScreen = mainScreen,
+        onMainScreenChange = onMainScreenChange
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SettingsScreen(
+    startDestination: String,
+    currentPath: String,
+    currentTheme: AppTheme,
+    onThemeChange: (AppTheme) -> Unit,
+    onChangeDirectory: () -> Unit,
+    onClose: () -> Unit,
+    confirmDelete: Boolean,
+    onConfirmDeleteChange: (Boolean) -> Unit,
+    autoCreateFile: Boolean,
+    onAutoCreateFileChange: (Boolean) -> Unit,
+    devMode: Boolean,
+    onDevModeChange: (Boolean) -> Unit,
+    topApp: String?,
+    onTopAppChange: (String) -> Unit,
+    bottomApp: String?,
+    onBottomAppChange: (String) -> Unit,
+    showAllApps: Boolean,
+    onShowAllAppsChange: (Boolean) -> Unit,
+    onSetDefaultHome: () -> Unit,
+    onLaunchDualScreen: () -> Unit,
+    mainScreen: MainScreen,
+    onMainScreenChange: (MainScreen) -> Unit
+) {
     val navController = rememberNavController()
 
     BackHandler {
@@ -138,7 +251,7 @@ fun SettingsScreen(
         }
     }
 
-    NavHost(navController = navController, startDestination = "main") {
+    NavHost(navController = navController, startDestination = startDestination) {
         composable("main") {
             MainSettingsScreen(navController = navController, onClose = onClose)
         }
@@ -157,7 +270,7 @@ fun SettingsScreen(
             AppearanceSettingsScreen(navController = navController, currentTheme = currentTheme, onThemeChange = onThemeChange)
         }
         composable("home_launcher") {
-            HomeLauncherSettingsScreen(
+            HomeLauncherSettingsMenu(
                 navController = navController,
                 topApp = topApp,
                 onTopAppChange = onTopAppChange,
@@ -175,7 +288,7 @@ fun SettingsScreen(
             DeveloperSettingsScreen(navController = navController, devMode = devMode, onDevModeChange = onDevModeChange)
         }
         composable("about") {
-            AboutDialog(versionName = "0.2.0") { navController.popBackStack() }
+            AboutDialog() { navController.popBackStack() }
         }
     }
 }
@@ -249,7 +362,7 @@ private fun MainSettingsScreen(navController: NavController, onClose: () -> Unit
 }
 
 @Composable
-private fun SettingsItem(icon: ImageVector, title: String, subtitle: String, onClick: () -> Unit) {
+fun SettingsItem(icon: ImageVector, title: String, subtitle: String, onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -400,7 +513,7 @@ data class LauncherApp(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun HomeLauncherSettingsScreen(
+private fun HomeLauncherSettingsMenu(
     navController: NavController,
     topApp: String?,
     onTopAppChange: (String) -> Unit,
@@ -456,7 +569,9 @@ private fun HomeLauncherSettingsScreen(
                         onExpandedChange = { topExpanded = !topExpanded }
                     ) {
                         TextField(
-                            modifier = Modifier.menuAnchor().fillMaxWidth(),
+                            modifier = Modifier
+                                .menuAnchor()
+                                .fillMaxWidth(),
                             readOnly = true,
                             value = selectedTopApp?.label ?: "Select App",
                             onValueChange = {},
@@ -498,7 +613,9 @@ private fun HomeLauncherSettingsScreen(
                         onExpandedChange = { bottomExpanded = !bottomExpanded }
                     ) {
                         TextField(
-                            modifier = Modifier.menuAnchor().fillMaxWidth(),
+                            modifier = Modifier
+                                .menuAnchor()
+                                .fillMaxWidth(),
                             readOnly = true,
                             value = selectedBottomApp?.label ?: "Select App",
                             onValueChange = {},
@@ -632,7 +749,16 @@ private fun DeveloperSettingsScreen(
 }
 
 @Composable
-fun AboutDialog(versionName: String, onDismiss: () -> Unit) {
+fun AboutDialog(onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    val versionName = remember {
+        try {
+            val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
+            packageInfo.versionName ?: "N/A"
+        } catch (e: Exception) {
+            "Unknown"
+        }
+    }
     val uriHandler = LocalUriHandler.current
     val githubUrl = "https://github.com/blacksheepmvp/mjolnir"
 
@@ -716,4 +842,113 @@ fun getLaunchableApps(context: Context, showAll: Boolean): List<LauncherApp> {
 
 fun launchOnDualScreens(context: Context, topIntent: Intent, bottomIntent: Intent) {
     DualScreenLauncher.launchOnDualScreens(context, topIntent, bottomIntent, MainScreen.TOP)
+}
+
+@Composable
+fun SetupScreen(onPickDirectory: () -> Unit, modifier: Modifier = Modifier) {
+    Surface(modifier = modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text("Mjolnir Setup", style = MaterialTheme.typography.headlineLarge, modifier = Modifier.padding(bottom = 16.dp))
+            Text("To begin, please select the directory where you store your Steam ROM files.", textAlign = TextAlign.Center)
+            Spacer(Modifier.height(24.dp))
+            Button(onClick = onPickDirectory) { Text("Choose Directory") }
+        }
+    }
+}
+
+@Composable
+fun OverwriteConfirmationDialog(
+    overwriteInfo: xyz.blacksheep.mjolnir.utils.OverwriteInfo,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Overwrite File?") },
+        text = {
+            Column {
+                Text("A file named \"${overwriteInfo.gameInfo.name}.steam\" already exists with a different AppID.")
+                Spacer(modifier = Modifier.height(16.dp))
+                Text("Old AppID: ${overwriteInfo.oldAppId}")
+                Text("New AppID: ${overwriteInfo.gameInfo.appId}")
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        confirmButton = { Button(onClick = onConfirm) { Text("Overwrite") } }
+    )
+}
+
+@Composable
+fun ManualInputUi(onSearch: (String) -> Unit, modifier: Modifier = Modifier) {
+    var manualAppId by rememberSaveable { mutableStateOf("") }
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        OutlinedTextField(
+            value = manualAppId,
+            onValueChange = { manualAppId = it.filter(Char::isDigit) },
+            label = { Text("Enter AppID") },
+            singleLine = true,
+            shape = RoundedCornerShape(50),
+            modifier = Modifier.weight(1f),
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+            keyboardActions = KeyboardActions(onSearch = { onSearch(manualAppId) })
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        IconButton(onClick = { onSearch(manualAppId) }) {
+            Icon(Icons.Default.Search, contentDescription = "Search")
+        }
+    }
+}
+
+@Composable
+fun SearchUi(
+    uiState: UiState,
+    fileCreationResult: String?,
+    onCreateFile: (GameInfo) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Box(modifier = modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+        if (uiState is UiState.Success) {
+            AsyncImage(
+                model = uiState.gameInfo.headerImage,
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize().blur(16.dp),
+                contentScale = ContentScale.Crop
+            )
+            Box(modifier = Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, MaterialTheme.colorScheme.surface.copy(alpha = 0.5f), MaterialTheme.colorScheme.surface))))
+        }
+
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+            modifier = Modifier.padding(16.dp).fillMaxSize()
+        ) {
+            when (uiState) {
+                is UiState.Idle -> Text("Enter a Steam AppID to begin.")
+                is UiState.Loading -> CircularProgressIndicator()
+                is UiState.Success -> {
+                    Text(
+                        text = uiState.gameInfo.name,
+                        style = MaterialTheme.typography.headlineMedium,
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Button(onClick = { onCreateFile(uiState.gameInfo) }) { Text("Save .steam File") }
+                    fileCreationResult?.let {
+                        val color = if (it.startsWith("Error")) MaterialTheme.colorScheme.error else LocalContentColor.current
+                        Text(it, modifier = Modifier.padding(top = 8.dp), color = color, textAlign = TextAlign.Center)
+                    }
+                }
+                is UiState.Failure -> Text("Error: ${uiState.error}", color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center)
+            }
+        }
+    }
 }

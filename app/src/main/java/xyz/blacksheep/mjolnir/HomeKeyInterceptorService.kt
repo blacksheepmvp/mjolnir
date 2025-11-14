@@ -9,6 +9,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import xyz.blacksheep.mjolnir.utils.*
+import xyz.blacksheep.mjolnir.settings.*
+import xyz.blacksheep.mjolnir.ui.theme.*
 
 class HomeKeyInterceptorService : AccessibilityService(), SharedPreferences.OnSharedPreferenceChangeListener {
 
@@ -17,12 +20,12 @@ class HomeKeyInterceptorService : AccessibilityService(), SharedPreferences.OnSh
 
     override fun onServiceConnected() {
         super.onServiceConnected()
-        prefs = getSharedPreferences(SteamFileGenActivity.PREFS_NAME, MODE_PRIVATE)
+        prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
         prefs.registerOnSharedPreferenceChangeListener(this)
     }
 
     override fun onKeyEvent(event: KeyEvent): Boolean {
-        val isInterceptionActive = prefs.getBoolean(SteamFileGenActivity.KEY_HOME_INTERCEPTION_ACTIVE, false)
+        val isInterceptionActive = prefs.getBoolean(KEY_HOME_INTERCEPTION_ACTIVE, false)
 
         // The AYN button on the Thor also reports as KEYCODE_HOME.
         // We need to check the scancode to differentiate them.
@@ -37,12 +40,12 @@ class HomeKeyInterceptorService : AccessibilityService(), SharedPreferences.OnSh
     }
 
     private fun handleHomeKey() {
-        val topAppPkg = prefs.getString(SteamFileGenActivity.KEY_TOP_APP, null)
-        val bottomAppPkg = prefs.getString(SteamFileGenActivity.KEY_BOTTOM_APP, null)
+        val topAppPkg = prefs.getString(KEY_TOP_APP, null)
+        val bottomAppPkg = prefs.getString(KEY_BOTTOM_APP, null)
 
         if (topAppPkg != null && bottomAppPkg != null) {
-            val showAllApps = prefs.getBoolean(SteamFileGenActivity.KEY_SHOW_ALL_APPS, false)
-            val mainScreen = MainScreen.valueOf(prefs.getString(SteamFileGenActivity.KEY_MAIN_SCREEN, MainScreen.TOP.name) ?: MainScreen.TOP.name)
+            val showAllApps = prefs.getBoolean(KEY_SHOW_ALL_APPS, false)
+            val mainScreen = MainScreen.valueOf(prefs.getString(KEY_MAIN_SCREEN, MainScreen.TOP.name) ?: MainScreen.TOP.name)
             val launcherApps = getLaunchableApps(this, showAllApps)
             val topApp = launcherApps.find { it.packageName == topAppPkg }
             val bottomApp = launcherApps.find { it.packageName == bottomAppPkg }

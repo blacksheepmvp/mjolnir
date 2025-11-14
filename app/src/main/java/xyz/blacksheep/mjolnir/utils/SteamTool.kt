@@ -1,7 +1,8 @@
-package xyz.blacksheep.mjolnir
+package xyz.blacksheep.mjolnir.utils
 
 import android.content.Context
 import android.net.Uri
+import androidx.compose.runtime.saveable.Saver
 import androidx.documentfile.provider.DocumentFile
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.android.Android
@@ -11,25 +12,29 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
-/**
- * Data class representing the essential information for a Steam game.
- */
 data class GameInfo(val appId: String, val name: String, val headerImage: String)
-
-/**
- * Data class to hold information about a file overwrite operation.
- */
 data class OverwriteInfo(val gameInfo: GameInfo, val oldAppId: String)
 
-/**
- * A sealed interface to represent the different states of the game search UI.
- */
-sealed interface UiState {
-    object Idle : UiState
-    data class Loading(val appId: String) : UiState
-    data class Success(val gameInfo: GameInfo) : UiState
-    data class Failure(val error: String) : UiState
-}
+val GameInfoSaver = Saver<GameInfo, List<String>>(
+    save = { listOf(it.appId, it.name, it.headerImage) },
+    restore = { GameInfo(it[0], it[1], it[2]) }
+)
+
+val OverwriteInfoSaver = Saver<OverwriteInfo?, Any>(
+    save = { it?.let { with(GameInfoSaver) { save(it.gameInfo)?.let { list -> listOf(it.oldAppId) + list } } } },
+    restore = {
+        (it as? List<*>)?.let { value ->
+            val oldAppId = value[0] as String
+            @Suppress("UNCHECKED_CAST")
+            val gameInfo = GameInfoSaver.restore(value.drop(1) as? List<String> ?: emptyList())
+            if (gameInfo != null) {
+                OverwriteInfo(gameInfo, oldAppId)
+            } else {
+                null
+            }
+        }
+    }
+)
 
 object SteamTool {
     fun extractAppIdFromUrl(url: String): String? {
@@ -102,7 +107,7 @@ object SteamTool {
                 val root = JSONObject(jsonResponse).getJSONObject(appId)
                 if (!root.getBoolean("success")) throw Exception("Invalid AppID. No game found on Steam.")
                 val data = root.getJSONObject("data")
-                val gameName = data.getString("name").replace(Regex("[/:*?\"<>|]"), "").trim()
+                val gameName = data.getString("name").replace(Regex("[/:*?\\\"<>|]"), "").trim()
                 val headerImage = data.getString("header_image")
                 GameInfo(appId, gameName, headerImage)
             } finally {

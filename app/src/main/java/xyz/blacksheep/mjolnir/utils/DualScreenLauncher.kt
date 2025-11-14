@@ -1,4 +1,4 @@
-package xyz.blacksheep.mjolnir
+package xyz.blacksheep.mjolnir.utils
 
 import android.app.ActivityOptions
 import android.content.Context
@@ -6,6 +6,9 @@ import android.content.Intent
 import android.hardware.display.DisplayManager
 import android.os.Build
 import android.util.Log
+import xyz.blacksheep.mjolnir.settings.*
+import xyz.blacksheep.mjolnir.utils.*
+import xyz.blacksheep.mjolnir.ui.theme.*
 
 object DualScreenLauncher {
     private const val TAG = "DualScreenLauncher"
