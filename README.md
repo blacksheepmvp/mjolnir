@@ -4,7 +4,7 @@
 
 Mjolnir is a utility application designed specifically for the **AYN Thor** dual-screen Android gaming handheld, but it should work with any Android device running Android 7.0 or later.
 
-This release, **v0.2.1**, introduces the core feature of Mjolnir: the **Dual-Screen Home Launcher**. It also includes the previously released **Steam File Generator** tool.
+This release, **v0.2.2**, introduces a number of UI and UX refinements, as well as some minor bug fixes. The core features of Mjolnir are the **Dual-Screen Home Launcher** and the **Steam File Generator** tool.
 
 ---
 

@@ -6,19 +6,22 @@ import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.core.content.edit
+import xyz.blacksheep.mjolnir.settings.MainScreen
+import xyz.blacksheep.mjolnir.settings.getLaunchableApps
+import xyz.blacksheep.mjolnir.utils.DualScreenLauncher
 
 class HomeActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val prefs = getSharedPreferences(SteamFileGenActivity.PREFS_NAME, MODE_PRIVATE)
+        val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
         val failureCount = prefs.getInt(KEY_LAUNCH_FAILURE_COUNT, 0)
 
         if (failureCount >= 3) {
             // Too many failures, clear settings and go to stock launcher settings
             prefs.edit {
-                remove(SteamFileGenActivity.KEY_TOP_APP)
-                remove(SteamFileGenActivity.KEY_BOTTOM_APP)
+                remove(KEY_TOP_APP)
+                remove(KEY_BOTTOM_APP)
                 remove(KEY_LAUNCH_FAILURE_COUNT)
             }
             Toast.makeText(this, "Resetting home launcher due to repeated errors.", Toast.LENGTH_LONG).show()
@@ -28,10 +31,10 @@ class HomeActivity : ComponentActivity() {
             return
         }
 
-        val topAppPkg = prefs.getString(SteamFileGenActivity.KEY_TOP_APP, null)
-        val bottomAppPkg = prefs.getString(SteamFileGenActivity.KEY_BOTTOM_APP, null)
-        val showAllApps = prefs.getBoolean(SteamFileGenActivity.KEY_SHOW_ALL_APPS, false)
-        val mainScreen = MainScreen.valueOf(prefs.getString(SteamFileGenActivity.KEY_MAIN_SCREEN, MainScreen.TOP.name) ?: MainScreen.TOP.name)
+        val topAppPkg = prefs.getString(KEY_TOP_APP, null)
+        val bottomAppPkg = prefs.getString(KEY_BOTTOM_APP, null)
+        val showAllApps = prefs.getBoolean(KEY_SHOW_ALL_APPS, false)
+        val mainScreen = MainScreen.valueOf(prefs.getString(KEY_MAIN_SCREEN, MainScreen.TOP.name) ?: MainScreen.TOP.name)
 
         if (topAppPkg != null && bottomAppPkg != null) {
             val launcherApps = getLaunchableApps(this, showAllApps)
@@ -63,9 +66,5 @@ class HomeActivity : ComponentActivity() {
             putExtra("open_settings", true)
         }
         startActivity(intent)
-    }
-
-    companion object {
-        const val KEY_LAUNCH_FAILURE_COUNT = "launch_failure_count"
     }
 }
