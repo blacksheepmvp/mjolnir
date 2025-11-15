@@ -2,6 +2,7 @@ package xyz.blacksheep.mjolnir
 
 import android.Manifest
 import android.app.Activity
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -9,6 +10,7 @@ import android.os.Bundle
 import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -29,15 +31,24 @@ import androidx.core.content.edit
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.core.view.WindowCompat
 import kotlinx.coroutines.launch
+import xyz.blacksheep.mjolnir.home.HomeActionLauncher
 import xyz.blacksheep.mjolnir.ui.theme.MjolnirTheme
 import xyz.blacksheep.mjolnir.settings.*
 import xyz.blacksheep.mjolnir.utils.*
-import xyz.blacksheep.mjolnir.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Handle being launched as a Home app
+        if (intent.hasCategory(Intent.CATEGORY_HOME)) {
+            val launcher = HomeActionLauncher(this)
+            launcher.launchBoth()
+            finish()
+            return // Do not proceed to show UI
+        }
+
         installSplashScreen()
 
         WindowCompat.setDecorFitsSystemWindows(window, false)
@@ -78,11 +89,18 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
+            var showHomeSetup by rememberSaveable { mutableStateOf(false) }
+
+            val accessibilitySettingsLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+                if (isAccessibilityServiceEnabled(this, HomeKeyInterceptorService::class.java)) {
+                    showHomeSetup = false
+                }
+            }
+
             MjolnirTheme(darkTheme = useDarkTheme) {
                 var showSettings by rememberSaveable { mutableStateOf(false) }
                 var settingsStartDestination by rememberSaveable { mutableStateOf ("main") }
                 var showAboutDialog by rememberSaveable { mutableStateOf(false) }
-                var showHomeSetup by rememberSaveable { mutableStateOf(false) }
                 var menuExpanded by remember { mutableStateOf(false) }
 
                 var confirmDelete by rememberSaveable { mutableStateOf(prefs.getBoolean(KEY_CONFIRM_DELETE, true)) }
@@ -200,6 +218,7 @@ class MainActivity : ComponentActivity() {
                 }
 
                 if (showHomeSetup) {
+                    BackHandler { showHomeSetup = false }
                     HomeSetup(
                         onGrantPermissionClick = {
                             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -208,7 +227,7 @@ class MainActivity : ComponentActivity() {
                         },
                         onEnableAccessibilityClick = {
                             val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
-                            startActivity(intent)
+                            accessibilitySettingsLauncher.launch(intent)
                         },
                         onEnableHomeInterceptionClick = {
                             prefs.edit { putBoolean(KEY_HOME_INTERCEPTION_ACTIVE, true) }
@@ -293,4 +312,18 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    fun isAccessibilityServiceEnabled(context: Context, service: Class<*>): Boolean {
+        val serviceId = "${context.packageName}/${service.name}"
+        try {
+            val enabledServices = Settings.Secure.getString(
+                context.contentResolver,
+                Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+            )
+            return enabledServices?.contains(serviceId) == true
+        } catch (e: Exception) {
+            return false // Service is not enabled
+        }
+    }
+
 }

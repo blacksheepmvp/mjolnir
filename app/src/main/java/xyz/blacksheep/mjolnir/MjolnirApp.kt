@@ -4,12 +4,20 @@ import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.os.Build
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import xyz.blacksheep.mjolnir.utils.AppQueryHelper
 
 class MjolnirApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
         createPersistentNotificationChannel()
+
+        // Prewarm icon cache
+        CoroutineScope(Dispatchers.IO).launch {
+            AppQueryHelper.prewarmAllApps(this@MjolnirApp) }
     }
 
     private fun createPersistentNotificationChannel() {

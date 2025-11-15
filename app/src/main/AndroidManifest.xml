@@ -11,6 +11,7 @@
             <action android:name="android.intent.action.MAIN" />
         </intent>
     </queries>
+    <uses-permission android:name="android.permission.VIBRATE" />
     <application
         android:name=".MjolnirApp"
         android:allowBackup="true"
@@ -27,11 +28,14 @@
             android:theme="@style/Theme.Mjolnir.Splash"
             android:windowSoftInputMode="adjustResize"
             android:resizeableActivity="true"
+            android:launchMode="standard"
+            android:screenOrientation="fullSensor"
             android:configChanges="orientation|screenSize|keyboard|keyboardHidden">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
-
                 <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.HOME" />
+                <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
         <activity
@@ -51,17 +55,8 @@
         </activity>
         <activity
             android:name=".ManualFileGenActivity"
-            android.exported="false"
+            android:exported="false"
             android:theme="@style/Theme.Mjolnir" />
-        <activity
-            android:name=".HomeActivity"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.HOME" />
-                <category android:name="android.intent.category.DEFAULT" />
-            </intent-filter>
-        </activity>
 
         <service
             android:name=".MjolnirHomeTileService"
@@ -102,7 +97,8 @@
         <service
             android:name=".services.KeepAliveService"
             android:exported="false"
-            android:foregroundServiceType="dataSync" />
+            android:foregroundServiceType="dataSync"
+            tools:ignore="ForegroundServicePermission" />
 
     </application>
 

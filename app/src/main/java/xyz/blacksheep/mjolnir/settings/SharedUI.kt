@@ -1,13 +1,11 @@
 package xyz.blacksheep.mjolnir.settings
 
-//import androidx.compose.material.icons.Icons
-//import androidx.compose.ui.Alignment
-//import androidx.compose.ui.text.style.TextAlign
-import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
-import android.util.Log
+import android.graphics.drawable.Drawable
+import android.view.ViewConfiguration
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -19,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
@@ -38,6 +37,7 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Divider
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -49,10 +49,12 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -68,9 +70,15 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.painter.BitmapPainter
+import androidx.compose.ui.graphics.painter.ColorPainter
+import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -79,14 +87,28 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
+import androidx.constraintlayout.compose.ConstraintLayout
+import androidx.core.graphics.drawable.toBitmap
 import androidx.navigation.NavController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import coil.compose.AsyncImage
+import xyz.blacksheep.mjolnir.KEY_CUSTOM_DOUBLE_TAP_DELAY
+import xyz.blacksheep.mjolnir.KEY_DOUBLE_HOME_ACTION
+import xyz.blacksheep.mjolnir.KEY_LONG_HOME_ACTION
+import xyz.blacksheep.mjolnir.KEY_SINGLE_HOME_ACTION
+import xyz.blacksheep.mjolnir.KEY_TRIPLE_HOME_ACTION
+import xyz.blacksheep.mjolnir.KEY_USE_SYSTEM_DOUBLE_TAP_DELAY
+import xyz.blacksheep.mjolnir.PREFS_NAME
+import xyz.blacksheep.mjolnir.home.Action
+import xyz.blacksheep.mjolnir.home.actionLabel
+import xyz.blacksheep.mjolnir.utils.AppQueryHelper
 import xyz.blacksheep.mjolnir.utils.DualScreenLauncher
 import xyz.blacksheep.mjolnir.utils.GameInfo
 import xyz.blacksheep.mjolnir.utils.GameInfoSaver
+import xyz.blacksheep.mjolnir.utils.OverwriteInfo
+import kotlin.math.roundToInt
 
 enum class AppTheme { LIGHT, DARK, SYSTEM }
 enum class MainScreen { TOP, BOTTOM }
@@ -122,6 +144,83 @@ sealed interface UiState {
     data class Loading(val appId: String) : UiState
     data class Success(val gameInfo: GameInfo) : UiState
     data class Failure(val error: String) : UiState
+}
+
+@Composable
+fun AppSlotCard(
+    modifier: Modifier = Modifier,
+    app: LauncherApp?,              // null = no selection yet
+    label: String,                  // "Top Screen App", "Bottom Screen App"
+    onClick: () -> Unit             // triggers drop-down
+) {
+    val bgColor = MaterialTheme.colorScheme.surfaceVariant
+    val contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(120.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .clickable { onClick() },
+        color = bgColor,
+        tonalElevation = 3.dp,
+        shadowElevation = 4.dp
+    ) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            if (app == null) {
+                // Empty slot placeholder
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = null,
+                        tint = contentColor,
+                        modifier = Modifier.size(36.dp)
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = label,
+                        color = contentColor,
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                }
+            } else {
+                // Show app icon and name
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Image(
+                        painter = rememberDrawablePainter(app.launchIntent.getPackageIcon()),
+                        contentDescription = null,
+                        modifier = Modifier.size(48.dp)
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = app.label,
+                        color = contentColor,
+                        style = MaterialTheme.typography.bodyLarge,
+                        maxLines = 1
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun rememberDrawablePainter(drawable: Drawable?): Painter {
+    return remember(drawable) { drawable?.toBitmap()?.let { BitmapPainter(it.asImageBitmap()) } ?: ColorPainter(Color.Transparent) }
+}
+
+@Composable
+fun Intent.getPackageIcon(context: Context = LocalContext.current): Drawable? {
+    val pm = context.packageManager
+    val pkg = this.getPackage() ?: return null
+    return try {
+        pm.getApplicationIcon(pkg)
+    } catch (e: Exception) {
+        null
+    }
 }
 
 @Composable
@@ -546,6 +645,18 @@ private fun HomeLauncherSettingsMenu(
                         IconButton(onClick = { navController.popBackStack() }) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                         }
+                    },
+                    actions = {
+                        TextButton(onClick = { onShowAllAppsChange(!showAllApps) }) {
+                            Text(
+                                text = if (showAllApps) "Filter Apps" else "Remove App Filter",
+                                color = if (showAllApps)
+                                    MaterialTheme.colorScheme.primary
+                                else
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
                     }
                 )
             }
@@ -554,131 +665,553 @@ private fun HomeLauncherSettingsMenu(
         innerPadding ->
         LazyColumn(modifier = Modifier.padding(innerPadding)) {
             item {
-                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 20.dp)) {
-                    Text(
-                        "Top Screen App",
-                        style = MaterialTheme.typography.bodyLarge
-                    )
-                    Text(
-                        selectedTopApp?.label ?: "Select an app to launch on the top screen",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    ExposedDropdownMenuBox(
-                        expanded = topExpanded,
-                        onExpandedChange = { topExpanded = !topExpanded }
-                    ) {
-                        TextField(
-                            modifier = Modifier
-                                .menuAnchor()
-                                .fillMaxWidth(),
-                            readOnly = true,
-                            value = selectedTopApp?.label ?: "Select App",
-                            onValueChange = {},
-                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = topExpanded) },
-                            colors = ExposedDropdownMenuDefaults.textFieldColors()
-                        )
-                        ExposedDropdownMenu(
-                            expanded = topExpanded,
-                            onDismissRequest = { topExpanded = false }
-                        ) {
-                            launcherApps.forEach { app ->
-                                DropdownMenuItem(
-                                    text = { Text(app.label) },
-                                    onClick = {
-                                        onTopAppChange(app.packageName)
-                                        topExpanded = false
-                                    }
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-
-            item {
-                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 20.dp)) {
-                    Text(
-                        "Bottom Screen App",
-                        style = MaterialTheme.typography.bodyLarge
-                    )
-                    Text(
-                        selectedBottomApp?.label ?: "Select an app to launch on the bottom screen",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    ExposedDropdownMenuBox(
-                        expanded = bottomExpanded,
-                        onExpandedChange = { bottomExpanded = !bottomExpanded }
-                    ) {
-                        TextField(
-                            modifier = Modifier
-                                .menuAnchor()
-                                .fillMaxWidth(),
-                            readOnly = true,
-                            value = selectedBottomApp?.label ?: "Select App",
-                            onValueChange = {},
-                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = bottomExpanded) },
-                            colors = ExposedDropdownMenuDefaults.textFieldColors()
-                        )
-                        ExposedDropdownMenu(
-                            expanded = bottomExpanded,
-                            onDismissRequest = { bottomExpanded = false }
-                        ) {
-                            launcherApps.forEach { app ->
-                                DropdownMenuItem(
-                                    text = { Text(app.label) },
-                                    onClick = {
-                                        onBottomAppChange(app.packageName)
-                                        bottomExpanded = false
-                                    }
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-
-            item {
-                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 20.dp)) {
-                    Text("Main Screen", style = MaterialTheme.typography.bodyLarge)
-                    Text(
-                        "Determines which app has focus after launching",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(Modifier.height(16.dp))
-                    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                        mainScreenOptions.forEachIndexed { index, label ->
-                            SegmentedButton(
-                                shape = SegmentedButtonDefaults.itemShape(index = index, count = mainScreenOptions.size),
-                                onClick = { onMainScreenChange(MainScreen.valueOf(label)) },
-                                selected = mainScreen.name == label
-                            ) {
-                                Text(label)
-                            }
-                        }
-                    }
-                }
-            }
-
-            item {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 20.dp)
-                        .clickable { onShowAllAppsChange(!showAllApps) }
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Show all installed apps", style = MaterialTheme.typography.bodyLarge)
-                        Text("Disable to only show apps detected as launchers", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+                    // TITLE
+                    Text(
+                        text = "Select Home Apps",
+                        style = MaterialTheme.typography.titleLarge,
+                        modifier = Modifier.padding(
+                            start = 0.dp,
+                            top = 4.dp,
+                            end = 0.dp,
+                            bottom = 12.dp
+                        )
+                    )
+
+                    val cardHeight = 140.dp
+                    val topCardWidth = cardHeight * (16f / 9f)
+                    val bottomCardWidth = cardHeight * (4f / 3f)
+
+                    val mainTopLabel = if (mainScreen == MainScreen.TOP) "Main Screen" else ""
+                    val mainBottomLabel = if (mainScreen == MainScreen.BOTTOM) "Main Screen" else ""
+
+                    ConstraintLayout(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 8.dp)
+                    ) {
+                        // GUIDELINES FOR 3 COLUMNS
+                        val c1 = createGuidelineFromStart(0.0f)
+                        val c2 = createGuidelineFromStart(0.33f)
+                        val c3 = createGuidelineFromEnd(0.33f)
+                        val c4 = createGuidelineFromEnd(0.0f)
+
+                        val (
+                            radioTop, cardTop, labelTop,
+                            radioBottom, cardBottom, labelBottom
+                        ) = createRefs()
+
+                        // -------------------------
+                        // TOP ROW
+                        // -------------------------
+
+                        RadioButton(
+                            selected = mainScreen == MainScreen.TOP,
+                            onClick = { onMainScreenChange(MainScreen.TOP) },
+                            modifier = Modifier.constrainAs(radioTop) {
+                                linkTo(start = c1, end = c2)
+                                centerVerticallyTo(cardTop)
+                            }
+                        )
+
+                        // CARD + DROPDOWN (TOP)
+                        Box(
+                            modifier = Modifier
+                                .width(topCardWidth)
+                                .height(cardHeight)
+                                .constrainAs(cardTop) {
+                                    start.linkTo(c2)
+                                    end.linkTo(c3)
+                                    top.linkTo(parent.top)
+                                }
+                        ) {
+
+                            AppSlotCard(
+                                app = selectedTopApp,
+                                label = "Select Top Screen App",
+                                onClick = { topExpanded = true }
+                            )
+
+                            ExposedDropdownMenuBox(
+                                expanded = topExpanded,
+                                onExpandedChange = { topExpanded = it }
+                            ) {
+                                TextField(
+                                    value = selectedTopApp?.label ?: "",
+                                    onValueChange = {},
+                                    readOnly = true,
+                                    modifier = Modifier
+                                        .menuAnchor()
+                                        .alpha(0f),
+                                        //.size(1.dp),
+                                    enabled = false,
+                                    colors = ExposedDropdownMenuDefaults.textFieldColors(
+                                        disabledIndicatorColor = Color.Transparent,
+                                        unfocusedIndicatorColor = Color.Transparent,
+                                        focusedIndicatorColor = Color.Transparent
+                                    )
+                                )
+
+                                ExposedDropdownMenu(
+                                    expanded = topExpanded,
+                                    onDismissRequest = { topExpanded = false }
+                                ) {
+                                    launcherApps.forEach { app ->
+                                        DropdownMenuItem(
+                                            text = { Text(app.label) },
+                                            leadingIcon = {
+                                                Image(
+                                                    painter = rememberDrawablePainter(app.launchIntent.getPackageIcon()),
+                                                    contentDescription = null,
+                                                    modifier = Modifier.size(24.dp)
+                                                )
+                                            },
+                                            onClick = {
+                                                onTopAppChange(app.packageName)
+                                                topExpanded = false
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        Text(
+                            text = mainTopLabel,
+                            style = MaterialTheme.typography.bodyLarge,
+                            modifier = Modifier.constrainAs(labelTop) {
+                                linkTo(start = c3, end = c4)
+                                centerVerticallyTo(cardTop)
+                            }
+                        )
+
+                        // -------------------------
+                        // BOTTOM ROW
+                        // -------------------------
+
+                        RadioButton(
+                            selected = mainScreen == MainScreen.BOTTOM,
+                            onClick = { onMainScreenChange(MainScreen.BOTTOM) },
+                            modifier = Modifier.constrainAs(radioBottom) {
+                                linkTo(start = c1, end = c2)
+                                centerVerticallyTo(cardBottom)
+                            }
+                        )
+
+                        Box(
+                            modifier = Modifier
+                                .width(bottomCardWidth)
+                                .height(cardHeight)
+                                .constrainAs(cardBottom) {
+                                    start.linkTo(c2)
+                                    end.linkTo(c3)
+                                    top.linkTo(cardTop.bottom, margin = 24.dp)
+                                }
+                        ) {
+
+                            AppSlotCard(
+                                app = selectedBottomApp,
+                                label = "Select Bottom Screen App",
+                                onClick = { bottomExpanded = true }
+                            )
+
+                            ExposedDropdownMenuBox(
+                                expanded = bottomExpanded,
+                                onExpandedChange = { bottomExpanded = it }
+                            ) {
+                                TextField(
+                                    value = selectedBottomApp?.label ?: "",
+                                    onValueChange = {},
+                                    readOnly = true,
+                                    modifier = Modifier
+                                        .menuAnchor()
+                                        .alpha(0f),
+                                        //.size(1.dp),
+                                    enabled = false,
+                                    colors = ExposedDropdownMenuDefaults.textFieldColors(
+                                        disabledIndicatorColor = Color.Transparent,
+                                        unfocusedIndicatorColor = Color.Transparent,
+                                        focusedIndicatorColor = Color.Transparent
+                                    )
+                                )
+
+                                ExposedDropdownMenu(
+                                    expanded = bottomExpanded,
+                                    onDismissRequest = { bottomExpanded = false }
+                                ) {
+                                    launcherApps.forEach { app ->
+                                        DropdownMenuItem(
+                                            text = { Text(app.label) },
+                                            leadingIcon = {
+                                                Image(
+                                                    painter = rememberDrawablePainter(app.launchIntent.getPackageIcon()),
+                                                    contentDescription = null,
+                                                    modifier = Modifier.size(24.dp)
+                                                )
+                                            },
+                                            onClick = {
+                                                onBottomAppChange(app.packageName)
+                                                bottomExpanded = false
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        Text(
+                            text = mainBottomLabel,
+                            style = MaterialTheme.typography.bodyLarge,
+                            modifier = Modifier.constrainAs(labelBottom) {
+                                linkTo(start = c3, end = c4)
+                                centerVerticallyTo(cardBottom)
+                            }
+                        )
                     }
-                    Switch(checked = showAllApps, onCheckedChange = onShowAllAppsChange)
                 }
             }
+
+
+            item {
+                Text(
+                    text = "Home Button Behavior",
+                    style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier.padding(
+                        start = 16.dp,
+                        top = 24.dp,
+                        end = 16.dp,
+                        bottom = 8.dp
+                    )
+                )
+            }
+
+            item {
+                Divider(
+                    thickness = 2.dp,
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
+                )
+                Spacer(Modifier.height(8.dp))
+            }
+
+            item {
+                // --- Single Press Home Row ---
+                val context = LocalContext.current
+
+                // Read current value (replace this with your prefs system if different)
+                val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                var singleHomeAction by remember {
+                    mutableStateOf(
+                        Action.valueOf(
+                            prefs.getString(KEY_SINGLE_HOME_ACTION, Action.BOTH_HOME.name)!!
+                        )
+                    )
+                }
+
+                // Update preference helper
+                fun updateSingleHomeAction(newAction: Action) {
+                    singleHomeAction = newAction
+                    prefs.edit().putString(KEY_SINGLE_HOME_ACTION, newAction.name).apply()
+                }
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { /* no-op, dropdown handles interaction */ }
+                        .padding(vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Single press Home",
+                        modifier = Modifier.weight(1f)
+                    )
+
+                    var expanded by remember { mutableStateOf(false) }
+
+                    Box {
+                        Text(
+                            text = actionLabel(singleHomeAction),
+                            modifier = Modifier
+                                .clickable { expanded = true }
+                                .padding(8.dp)
+                        )
+
+                        DropdownMenu(
+                            expanded = expanded,
+                            onDismissRequest = { expanded = false }
+                        ) {
+                            Action.values().forEach { action ->
+                                DropdownMenuItem(
+                                    onClick = {
+                                        updateSingleHomeAction(action)
+                                        expanded = false
+                                    },
+                                    text = { Text(actionLabel(action)) }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            item {
+
+                // --- Double-Tap Home Row ---
+                val context = LocalContext.current
+
+                val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                var doubleHomeAction by remember {
+                    mutableStateOf(
+                        Action.valueOf(
+                            prefs.getString(KEY_DOUBLE_HOME_ACTION, Action.NONE.name)!!
+                        )
+                    )
+                }
+
+                fun updateDoubleHomeAction(newAction: Action) {
+                    doubleHomeAction = newAction
+                    prefs.edit().putString(KEY_DOUBLE_HOME_ACTION, newAction.name).apply()
+                }
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Double-tap Home",
+                        modifier = Modifier.weight(1f)
+                    )
+
+                    var expanded by remember { mutableStateOf(false) }
+
+                    Box {
+                        Text(
+                            text = actionLabel(doubleHomeAction),
+                            modifier = Modifier
+                                .clickable { expanded = true }
+                                .padding(8.dp)
+                        )
+
+                        DropdownMenu(
+                            expanded = expanded,
+                            onDismissRequest = { expanded = false }
+                        ) {
+                            Action.values().forEach { action ->
+                                DropdownMenuItem(
+                                    onClick = {
+                                        updateDoubleHomeAction(action)
+                                        expanded = false
+                                    },
+                                    text = { Text(actionLabel(action)) }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            item {
+
+                // --- Triple-Tap Home Row ---
+                val context = LocalContext.current
+
+                val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                var tripleHomeAction by remember {
+                    mutableStateOf(
+                        Action.valueOf(
+                            prefs.getString(KEY_TRIPLE_HOME_ACTION, Action.NONE.name)!!
+                        )
+                    )
+                }
+
+                fun updateTripleHomeAction(newAction: Action) {
+                    tripleHomeAction = newAction
+                    prefs.edit().putString(KEY_TRIPLE_HOME_ACTION, newAction.name).apply()
+                }
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Triple-tap Home",
+                        modifier = Modifier.weight(1f)
+                    )
+
+                    var expanded by remember { mutableStateOf(false) }
+
+                    Box {
+                        Text(
+                            text = actionLabel(tripleHomeAction),
+                            modifier = Modifier
+                                .clickable { expanded = true }
+                                .padding(8.dp)
+                        )
+
+                        DropdownMenu(
+                            expanded = expanded,
+                            onDismissRequest = { expanded = false }
+                        ) {
+                            Action.values().forEach { action ->
+                                DropdownMenuItem(
+                                    onClick = {
+                                        updateTripleHomeAction(action)
+                                        expanded = false
+                                    },
+                                    text = { Text(actionLabel(action)) }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            item {
+
+                // --- Long-Press Home Row ---
+                val context = LocalContext.current
+
+                val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                var longHomeAction by remember {
+                    mutableStateOf(
+                        Action.valueOf(
+                            prefs.getString(KEY_LONG_HOME_ACTION, Action.NONE.name)!!
+                        )
+                    )
+                }
+
+                fun updateLongHomeAction(newAction: Action) {
+                    longHomeAction = newAction
+                    prefs.edit().putString(KEY_LONG_HOME_ACTION, newAction.name).apply()
+                }
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Long-press Home",
+                        modifier = Modifier.weight(1f)
+                    )
+
+                    var expanded by remember { mutableStateOf(false) }
+
+                    Box {
+                        Text(
+                            text = actionLabel(longHomeAction),
+                            modifier = Modifier
+                                .clickable { expanded = true }
+                                .padding(8.dp)
+                        )
+
+                        DropdownMenu(
+                            expanded = expanded,
+                            onDismissRequest = { expanded = false }
+                        ) {
+                            Action.values().forEach { action ->
+                                DropdownMenuItem(
+                                    onClick = {
+                                        updateLongHomeAction(action)
+                                        expanded = false
+                                    },
+                                    text = { Text(actionLabel(action)) }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // --- DOUBLE-TAP DELAY SETTINGS (Toggle + Slider share state) ---
+            item {
+
+                val context = LocalContext.current
+                val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
+                val systemDoubleTap = ViewConfiguration.getDoubleTapTimeout()
+
+                // Shared state used by BOTH rows
+                var useSystemDoubleTapDelay by remember {
+                    mutableStateOf(
+                        prefs.getBoolean(KEY_USE_SYSTEM_DOUBLE_TAP_DELAY, true)
+                    )
+                }
+
+                var customDoubleTapDelayMs by remember {
+                    mutableStateOf(
+                        prefs.getInt(KEY_CUSTOM_DOUBLE_TAP_DELAY, systemDoubleTap)
+                    )
+                }
+
+                fun updateUseSystemDoubleTapDelay(newValue: Boolean) {
+                    useSystemDoubleTapDelay = newValue
+                    prefs.edit().putBoolean(KEY_USE_SYSTEM_DOUBLE_TAP_DELAY, newValue).apply()
+                }
+
+                fun updateCustomDoubleTapDelay(newValue: Int) {
+                    customDoubleTapDelayMs = newValue
+                    prefs.edit().putInt(KEY_CUSTOM_DOUBLE_TAP_DELAY, newValue).apply()
+                }
+
+                Column(modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 20.dp))
+                {
+
+                    // --- TOGGLE ROW ---
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Use system double-tap delay (${systemDoubleTap} ms)",
+                            modifier = Modifier.weight(1f)
+                        )
+                        Switch(
+                            checked = useSystemDoubleTapDelay,
+                            onCheckedChange = { updateUseSystemDoubleTapDelay(it) }
+                        )
+                    }
+
+                    // --- SLIDER (only visible if toggle = false) ---
+                    if (!useSystemDoubleTapDelay) {
+
+                        val minDelay = 100
+                        val maxDelay = 500
+                        val stepSize = 25
+                        val steps = (maxDelay - minDelay) / stepSize - 1
+
+                        Text(
+                            text = "Custom double-tap delay (${customDoubleTapDelayMs} ms)",
+                            modifier = Modifier.padding(top = 16.dp, bottom = 8.dp)
+                        )
+
+                        Slider(
+                            value = customDoubleTapDelayMs.toFloat(),
+                            onValueChange = { newValue ->
+                                val stepped = ((newValue - minDelay) / stepSize)
+                                    .roundToInt() * stepSize + minDelay
+                                updateCustomDoubleTapDelay(stepped)
+                            },
+                            valueRange = minDelay.toFloat()..maxDelay.toFloat(),
+                            steps = steps,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
+            }
+
+
 
             item { HorizontalDivider() }
 
@@ -686,14 +1219,14 @@ private fun HomeLauncherSettingsMenu(
                 Column(Modifier.padding(horizontal = 16.dp, vertical = 20.dp)) {
                     Button(
                         onClick = onSetDefaultHome,
-                        modifier = Modifier.fillMaxWidth()
+                        //modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("Set as Default Home Launcher")
+                        Text("Set default home")
                     }
                 }
             }
 
-            item {
+            /*item {
                 Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 20.dp)) {
                     Button(
                         onClick = onLaunchDualScreen,
@@ -703,7 +1236,7 @@ private fun HomeLauncherSettingsMenu(
                         Text("Test Dual-Screen Launch")
                     }
                 }
-            }
+            }*/
         }
     }
 }
@@ -790,55 +1323,32 @@ fun AboutDialog(onDismiss: () -> Unit) {
 }
 
 fun getLaunchableApps(context: Context, showAll: Boolean): List<LauncherApp> {
+    val queryHelper = AppQueryHelper(context)
+    val appInfoList = if (showAll) {
+        queryHelper.queryAllApps()
+    } else {
+        queryHelper.queryLauncherApps()
+    }
+
     val pm = context.packageManager
-    val apps = mutableListOf<LauncherApp>()
 
-    // --- Query all launchable (CATEGORY_LAUNCHER) apps ---
-    val launcherIntent = Intent(Intent.ACTION_MAIN).apply {
-        addCategory(Intent.CATEGORY_LAUNCHER)
-    }
-    val launcherActivities = pm.queryIntentActivities(launcherIntent, 0)
+    return appInfoList.map { appInfo ->
 
-    // --- Query home (CATEGORY_HOME) apps, e.g. Quickstep ---
-    val homeIntent = Intent(Intent.ACTION_MAIN).apply {
-        addCategory(Intent.CATEGORY_HOME)
-    }
-    val homeActivities = pm.queryIntentActivities(homeIntent, 0)
+        val launchIntent =
+            pm.getLaunchIntentForPackage(appInfo.packageName)
+                ?.apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
+                ?: Intent(Intent.ACTION_MAIN).apply {
+                    addCategory(Intent.CATEGORY_LAUNCHER)
+                    setPackage(appInfo.packageName)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
 
-    // Combine both
-    val allActivities = (launcherActivities + homeActivities).distinctBy {
-        it.activityInfo.packageName
-    }
-
-    for (ri in allActivities) {
-        val label = ri.loadLabel(pm).toString()
-        val pkg = ri.activityInfo.packageName
-        val activityName = ri.activityInfo.name
-
-        val intent = Intent(Intent.ACTION_MAIN).apply {
-            addCategory(Intent.CATEGORY_LAUNCHER)
-            component = ComponentName(pkg, activityName)
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-
-        apps.add(LauncherApp(label, pkg, intent))
-    }
-
-    // --- Apply optional filter ---
-    val filtered = if (!showAll) {
-        val homePkgs = homeActivities.map { it.activityInfo.packageName }
-        apps.filter { app ->
-            val name = app.packageName.lowercase()
-            homePkgs.contains(app.packageName) ||
-                    listOf("launcher", "home", "quickstep", "daijisho", "beacon", "es-de", "nova", "odin")
-                        .any { name.contains(it) }
-        }
-    } else apps
-
-    val distinct = filtered.distinctBy { it.packageName }.sortedBy { it.label.lowercase() }
-
-    Log.d(TAG, "Found ${distinct.size} apps (showAll=$showAll)")
-    return distinct
+        LauncherApp(
+            label = appInfo.label,
+            packageName = appInfo.packageName,
+            launchIntent = launchIntent
+        )
+    }.sortedBy { it.label.lowercase() }
 }
 
 fun launchOnDualScreens(context: Context, topIntent: Intent, bottomIntent: Intent) {
@@ -946,7 +1456,7 @@ fun SetupScreen(onPickDirectory: () -> Unit, onClose: () -> Unit, modifier: Modi
 
 @Composable
 fun OverwriteConfirmationDialog(
-    overwriteInfo: xyz.blacksheep.mjolnir.utils.OverwriteInfo,
+    overwriteInfo: OverwriteInfo,
     onDismiss: () -> Unit,
     onConfirm: () -> Unit
 ) {
@@ -987,6 +1497,14 @@ fun ManualInputUi(onSearch: (String) -> Unit, modifier: Modifier = Modifier) {
         IconButton(onClick = { onSearch(manualAppId) }) {
             Icon(Icons.Default.Search, contentDescription = "Search")
         }
+    }
+}
+
+fun getAppIcon(context: Context, packageName: String): Drawable? {
+    return try {
+        context.packageManager.getApplicationIcon(packageName)
+    } catch (e: Exception) {
+        null
     }
 }
 
