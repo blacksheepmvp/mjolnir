@@ -32,3 +32,5 @@ const val KEY_AUTO_BOOT_BOTH_HOME = "autoBootBothHomeOnServiceStart"
 
 // Key for app picker blacklist
 const val KEY_APP_BLACKLIST = "APP_BLACKLIST"
+
+const val KEY_ENABLE_FOCUS_LOCK_WORKAROUND = "enable_focus_lock_workaround"

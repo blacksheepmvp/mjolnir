@@ -3,9 +3,13 @@ package xyz.blacksheep.mjolnir.settings
 import android.content.Context
 import android.content.Intent
 import android.graphics.drawable.Drawable
+import android.net.Uri
+import android.provider.Settings
 import android.view.ViewConfiguration
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -104,6 +108,7 @@ import coil.compose.AsyncImage
 import xyz.blacksheep.mjolnir.KEY_APP_BLACKLIST
 import xyz.blacksheep.mjolnir.KEY_CUSTOM_DOUBLE_TAP_DELAY
 import xyz.blacksheep.mjolnir.KEY_DOUBLE_HOME_ACTION
+import xyz.blacksheep.mjolnir.KEY_ENABLE_FOCUS_LOCK_WORKAROUND
 import xyz.blacksheep.mjolnir.KEY_LONG_HOME_ACTION
 import xyz.blacksheep.mjolnir.KEY_SINGLE_HOME_ACTION
 import xyz.blacksheep.mjolnir.KEY_TRIPLE_HOME_ACTION
@@ -796,10 +801,17 @@ private fun HomeLauncherSettingsMenu(
     val selectedTopApp = remember(topApp) { launcherApps.find { it.packageName == topApp } }
     val selectedBottomApp = remember(bottomApp) { launcherApps.find { it.packageName == bottomApp } }
 
-    // Inside HomeLauncherSettingsMenu, near your other state variables
-
     val diagnosticsEnabled = remember { mutableStateOf(DiagnosticsConfig.isEnabled(context)) }
     val maxLogSize = remember { mutableStateOf(DiagnosticsConfig.getMaxBytes(context)) }
+
+    val prefs = remember { context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE) }
+    val focusLockWorkaroundState = remember { mutableStateOf(prefs.getBoolean(KEY_ENABLE_FOCUS_LOCK_WORKAROUND, false)) }
+
+    val overlayPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) {
+        // Optional: check Settings.canDrawOverlays(context) here if you want to auto-enable the toggle
+    }
 
     val mainScreenOptions = MainScreen.entries.map { it.name }
 
@@ -1553,6 +1565,46 @@ private fun HomeLauncherSettingsMenu(
                     Text("View / Export Diagnostics")
                 }
             }
+            item {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 12.dp)
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Fix Focus-Lock Top input bug (experimental)",
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                        Text(
+                            text = "Workaround for controller input failure on Top screen. Briefly shows an invisible overlay to force focus reset.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = focusLockWorkaroundState.value,
+                        onCheckedChange = { isChecked ->
+                            if (isChecked && !Settings.canDrawOverlays(context)) {
+                                // Request permission if enabling
+                                val intent = Intent(
+                                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                    Uri.parse("package:${context.packageName}")
+                                )
+                                overlayPermissionLauncher.launch(intent)
+                                // You might want to wait to set true until verified,
+                                // but for a simple toggle, setting it here + sharedPrefs is okay
+                                // provided the user actually grants it.
+                            }
+
+                            focusLockWorkaroundState.value = isChecked
+                            prefs.edit().putBoolean(KEY_ENABLE_FOCUS_LOCK_WORKAROUND, isChecked).apply()
+                        }
+                    )
+                }
+            }
+
 
             item { HorizontalDivider() }
 
@@ -1698,7 +1750,7 @@ fun getLaunchableApps(context: Context, showAll: Boolean): List<LauncherApp> {
 
     val pm = context.packageManager
 
-    return appInfoList.map { appInfo ->
+    val apps = appInfoList.map { appInfo ->
 
         val launchIntent =
             pm.getLaunchIntentForPackage(appInfo.packageName)
@@ -1715,6 +1767,18 @@ fun getLaunchableApps(context: Context, showAll: Boolean): List<LauncherApp> {
             launchIntent = launchIntent
         )
     }.sortedBy { it.label.lowercase() }
+
+    // --- MANUAL CHANGE START ---
+    // Create the <Nothing> option
+    val nothingOption = LauncherApp(
+        label = "<Nothing>",
+        packageName = "NOTHING", // This matches the backend check I added
+        launchIntent = Intent()  // Empty intent
+    )
+
+    // Return the list with <Nothing> at the top
+    return listOf(nothingOption) + apps
+    // --- MANUAL CHANGE END ---
 }
 
 fun launchOnDualScreens(context: Context, topIntent: Intent, bottomIntent: Intent) {

@@ -26,6 +26,7 @@ import xyz.blacksheep.mjolnir.home.HomeActionLauncher
 import xyz.blacksheep.mjolnir.home.actionLabel
 import xyz.blacksheep.mjolnir.services.KeepAliveService
 import xyz.blacksheep.mjolnir.utils.DiagnosticsLogger
+import xyz.blacksheep.mjolnir.workarounds.FocusLockOverlayWorkaround
 
 class HomeKeyInterceptorService : AccessibilityService(), SharedPreferences.OnSharedPreferenceChangeListener {
 
@@ -199,6 +200,26 @@ class HomeKeyInterceptorService : AccessibilityService(), SharedPreferences.OnSh
                 DiagnosticsLogger.logEvent("Gesture", "ACTION_RECENTS_TRIGGERED", context = this)
                 performGlobalAction(GLOBAL_ACTION_RECENTS)
             }
+        }
+
+        // Run the focus lock workaround if applicable
+        maybeRunFocusLockWorkaround(action)
+    }
+
+    private fun maybeRunFocusLockWorkaround(action: Action) {
+        // 1. Check if enabled in prefs
+        val isEnabled = prefs.getBoolean(KEY_ENABLE_FOCUS_LOCK_WORKAROUND, false)
+        if (!isEnabled) return
+
+        // 2. Check if action involves TOP display
+        val involvesTop = when (action) {
+            Action.TOP_HOME, Action.BOTH_HOME -> true
+            else -> false
+        }
+
+        if (involvesTop) {
+            DiagnosticsLogger.logEvent("Gesture", "WORKAROUND_TRIGGERED", "action=$action", this)
+            FocusLockOverlayWorkaround.run(this)
         }
     }
 

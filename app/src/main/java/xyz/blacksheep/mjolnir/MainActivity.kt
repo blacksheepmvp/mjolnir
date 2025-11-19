@@ -189,7 +189,8 @@ class MainActivity : ComponentActivity() {
                                     // Check if user configured top/bottom apps
                                     val topHome = prefs.getString(KEY_TOP_APP, null)
                                     val bottomHome = prefs.getString(KEY_BOTTOM_APP, null)
-                                    val homeAppsConfigured = !topHome.isNullOrEmpty() && !bottomHome.isNullOrEmpty()
+                                    // Updated condition: Only need ONE app to be set
+                                    val homeAppsConfigured = !topHome.isNullOrEmpty() || !bottomHome.isNullOrEmpty()
 
                                     // Determine visible status
                                     val tileActive = isInterceptionActive && isAccessibilityEnabled
@@ -208,7 +209,7 @@ class MainActivity : ComponentActivity() {
                                             },
                                             title = { Text("Setup Required") },
                                             text = {
-                                                Text("Please configure Top and Bottom Home Apps in Mjolnir Home Settings.")
+                                                Text("Please configure Top or Bottom Home App in Mjolnir Home Settings.")
                                             }
                                         )
                                     }

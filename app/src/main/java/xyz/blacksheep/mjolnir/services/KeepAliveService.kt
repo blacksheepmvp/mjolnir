@@ -116,11 +116,13 @@ class KeepAliveService : Service(), SharedPreferences.OnSharedPreferenceChangeLi
         val topApp = prefs.getString(KEY_TOP_APP, null)
         val bottomApp = prefs.getString(KEY_BOTTOM_APP, null)
         val diagnosticsEnabled = DiagnosticsConfig.isEnabled(this)
+        
+        // Determine if home config is complete (at least one app set)
         val homeConfigComplete = (topApp != null || bottomApp != null)
 
         // Determine Title
         val contentTitle = when {
-            !homeConfigComplete -> "Top/bottom home not configured."
+            !homeConfigComplete -> "Home app not configured."
             tileEnabled && serviceRunning -> "Home button capture ENABLED."
             !serviceRunning -> "Home button capture service DISABLED. Tap to open Mjolnir."
             !tileEnabled && serviceRunning -> "Home button capture DISABLED."
