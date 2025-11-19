@@ -36,26 +36,45 @@ class HomeActivity : ComponentActivity() {
         val showAllApps = prefs.getBoolean(KEY_SHOW_ALL_APPS, false)
         val mainScreen = MainScreen.valueOf(prefs.getString(KEY_MAIN_SCREEN, MainScreen.TOP.name) ?: MainScreen.TOP.name)
 
-        if (topAppPkg != null && bottomAppPkg != null) {
+        // Updated Logic: Only need ONE app to be set
+        if (topAppPkg != null || bottomAppPkg != null) {
             val launcherApps = getLaunchableApps(this, showAllApps)
-            val topApp = launcherApps.find { it.packageName == topAppPkg }
-            val bottomApp = launcherApps.find { it.packageName == bottomAppPkg }
 
-            if (topApp != null && bottomApp != null) {
-                val success = DualScreenLauncher.launchOnDualScreens(this, topApp.launchIntent, bottomApp.launchIntent, mainScreen)
-                if (success) {
-                    // Reset failure count on success
-                    prefs.edit { putInt(KEY_LAUNCH_FAILURE_COUNT, 0) }
-                } else {
-                    // Increment failure count
-                    prefs.edit { putInt(KEY_LAUNCH_FAILURE_COUNT, failureCount + 1) }
-                }
+            // SPECIAL CASE: Only 1 app is set
+            if (topAppPkg == null || bottomAppPkg == null) {
+                 val targetPkg = topAppPkg ?: bottomAppPkg
+                 val appToLaunch = launcherApps.find { it.packageName == targetPkg }
+                 if (appToLaunch != null) {
+                     // Launch single app on the main screen
+                     if (mainScreen == MainScreen.TOP) {
+                         DualScreenLauncher.launchOnTop(this, appToLaunch.launchIntent)
+                     } else {
+                         DualScreenLauncher.launchOnBottom(this, appToLaunch.launchIntent)
+                     }
+                     prefs.edit { putInt(KEY_LAUNCH_FAILURE_COUNT, 0) }
+                 } else {
+                      prefs.edit { putInt(KEY_LAUNCH_FAILURE_COUNT, failureCount + 1) }
+                      launchSettings()
+                 }
             } else {
-                // If for some reason the apps are not found, go to settings
-                prefs.edit { putInt(KEY_LAUNCH_FAILURE_COUNT, failureCount + 1) }
-                launchSettings()
+                // BOTH apps are set
+                val topApp = launcherApps.find { it.packageName == topAppPkg }
+                val bottomApp = launcherApps.find { it.packageName == bottomAppPkg }
+
+                if (topApp != null && bottomApp != null) {
+                    val success = DualScreenLauncher.launchOnDualScreens(this, topApp.launchIntent, bottomApp.launchIntent, mainScreen)
+                    if (success) {
+                        prefs.edit { putInt(KEY_LAUNCH_FAILURE_COUNT, 0) }
+                    } else {
+                        prefs.edit { putInt(KEY_LAUNCH_FAILURE_COUNT, failureCount + 1) }
+                    }
+                } else {
+                    prefs.edit { putInt(KEY_LAUNCH_FAILURE_COUNT, failureCount + 1) }
+                    launchSettings()
+                }
             }
         } else {
+            // NO apps are set
             launchSettings()
         }
         finish()

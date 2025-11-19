@@ -17,8 +17,9 @@ class AppQueryHelper(private val context: Context) {
 
     private fun getBlacklist(): Set<String> {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        // Default to blacklisting Quickstep (com.android.launcher3) if no preference exists
-        return prefs.getStringSet(KEY_APP_BLACKLIST, null) ?: setOf("com.android.launcher3")
+        // Default to blacklisting Quickstep (com.android.launcher3) and Android Settings if no preference exists
+        val defaultBlacklist = setOf("com.android.launcher3", "com.android.settings")
+        return prefs.getStringSet(KEY_APP_BLACKLIST, null) ?: defaultBlacklist
     }
 
     /**

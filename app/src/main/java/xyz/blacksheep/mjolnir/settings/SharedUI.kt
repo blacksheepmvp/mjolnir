@@ -1698,7 +1698,7 @@ fun getLaunchableApps(context: Context, showAll: Boolean): List<LauncherApp> {
 
     val pm = context.packageManager
 
-    return appInfoList.map { appInfo ->
+    val apps = appInfoList.map { appInfo ->
 
         val launchIntent =
             pm.getLaunchIntentForPackage(appInfo.packageName)
@@ -1715,6 +1715,18 @@ fun getLaunchableApps(context: Context, showAll: Boolean): List<LauncherApp> {
             launchIntent = launchIntent
         )
     }.sortedBy { it.label.lowercase() }
+
+    // --- MANUAL CHANGE START ---
+    // Create the <Nothing> option
+    val nothingOption = LauncherApp(
+        label = "<Nothing>",
+        packageName = "NOTHING", // This matches the backend check I added
+        launchIntent = Intent()  // Empty intent
+    )
+
+    // Return the list with <Nothing> at the top
+    return listOf(nothingOption) + apps
+    // --- MANUAL CHANGE END ---
 }
 
 fun launchOnDualScreens(context: Context, topIntent: Intent, bottomIntent: Intent) {

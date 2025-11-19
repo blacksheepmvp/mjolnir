@@ -503,7 +503,16 @@ class SteamFileGenActivity : ComponentActivity() {
                                 val top = launcherApps.find { it.packageName == topApp }
                                 val bottom = launcherApps.find { it.packageName == bottomApp }
                                 if (top != null && bottom != null) {
-                                    DualScreenLauncher.launchOnDualScreens(context, top.launchIntent, bottom.launchIntent, mainScreen)
+                                     DualScreenLauncher.launchOnDualScreens(context, top.launchIntent, bottom.launchIntent, mainScreen)
+                                } else if (top != null || bottom != null) {
+                                    val targetIntent = top?.launchIntent ?: bottom?.launchIntent
+                                    if (targetIntent != null) {
+                                        if (mainScreen == MainScreen.TOP) {
+                                            DualScreenLauncher.launchOnTop(context, targetIntent)
+                                        } else {
+                                            DualScreenLauncher.launchOnBottom(context, targetIntent)
+                                        }
+                                    }
                                 }
                             },
                             mainScreen = mainScreen,
