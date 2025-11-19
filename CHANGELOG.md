@@ -2,16 +2,53 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [0.2.3] - 2024-11-17
 
-### Added
-- TBD
+### 🔧 Major Fixes & Stability Improvements
+- **Resolved the critical “Clear All kills home capture” bug.**  
+  Mjolnir’s Home interception and persistent notification now survive the Thor’s aggressive Recents → Clear All behavior.
+- **KeepAliveService moved to a dedicated :keepalive process**, preventing OS task-kill events from shutting it down.
+- **Launcher activity removed from Recents** using `excludeFromRecents`, preventing package-level kill triggers.
 
-### Changed
-- TBD
+### 🎮 Major Feature: Gesture Engine Update
+- Added new **APP SWITCH action**, allowing any home gesture (tap, double-tap, long press) to trigger the Android Recents / App Switcher menu.
 
-### Fixed
-- TBD
+### 🧪 Diagnostics System
+A complete diagnostics framework has been implemented.
+
+- New **Capture Diagnostics** toggle.
+- **Export / View / Delete** diagnostic logs from inside the app.
+- **Plaintext, human-readable** logs.
+- **Zero** private data is collected.
+- **Nothing** gets uploaded or transmitted.
+- Includes:
+  - Home gesture timing
+  - Service lifecycle events
+  - Notification events
+  - Settings snapshots
+  - Launcher events
+  - Accessibility lifecycle
+  - Exceptions
+
+### 🧭 Blacklist & App Picker Improvements
+- Fully functional **App Blacklist** allowing users to prevent problematic apps (e.g., Quickstep) from being selected.
+- Fixed filtering logic — Quickstep and other system apps now appear correctly in the full app list.
+- Automatic **slot-swap** behavior: assigning the same app to both screens now swaps them instead of duplicating.
+- Quickstep is Blacklisted by default (it doesn't like being called from Mjolnir). User may remove it at their own risk.
+
+### 🌐 Notification & UX Updates
+- Notification text now accurately reflects:
+  - Interception state  
+  - Diagnostics state  
+  - Quick access to settings
+- Minor UI logic improvements.
+
+### 🔭 Future Direction
+Mjolnir’s launcher engine will be separated from the toolkit/UI in an upcoming release.  
+This will ensure:
+- Stable, persistent home interception  
+- Easy access to settings & SteamFileGen  
+- Clean foundation for future tools  
 
 ## [0.2.1] - 2024-07-30
 

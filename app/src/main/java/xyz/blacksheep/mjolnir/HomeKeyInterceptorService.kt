@@ -2,7 +2,6 @@ package xyz.blacksheep.mjolnir
 
 import android.Manifest
 import android.accessibilityservice.AccessibilityService
-import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import android.os.Build
@@ -11,7 +10,6 @@ import android.os.Looper
 import android.os.SystemClock
 import android.os.VibrationEffect
 import android.os.Vibrator
-import android.util.Log
 import android.view.KeyEvent
 import android.view.ViewConfiguration
 import android.view.accessibility.AccessibilityEvent
@@ -22,8 +20,12 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import xyz.blacksheep.mjolnir.home.*
+import xyz.blacksheep.mjolnir.home.Action
+import xyz.blacksheep.mjolnir.home.Gesture
+import xyz.blacksheep.mjolnir.home.HomeActionLauncher
+import xyz.blacksheep.mjolnir.home.actionLabel
 import xyz.blacksheep.mjolnir.services.KeepAliveService
+import xyz.blacksheep.mjolnir.utils.DiagnosticsLogger
 
 class HomeKeyInterceptorService : AccessibilityService(), SharedPreferences.OnSharedPreferenceChangeListener {
 
@@ -52,7 +54,7 @@ class HomeKeyInterceptorService : AccessibilityService(), SharedPreferences.OnSh
 
     override fun onServiceConnected() {
         super.onServiceConnected()
-        Log.d(TAG, "Accessibility service connected")
+        DiagnosticsLogger.logEvent("Service", "ACCESSIBILITY_CONNECTED", context = this)
         instance = this
         prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
         prefs.registerOnSharedPreferenceChangeListener(this)
@@ -70,12 +72,12 @@ class HomeKeyInterceptorService : AccessibilityService(), SharedPreferences.OnSh
             val autoBootHome = prefs.getBoolean(KEY_AUTO_BOOT_BOTH_HOME, true)
 
             if (autoBootHome) {
-                Log.d(TAG, "Auto-boot action: BOTH_HOME")
+                DiagnosticsLogger.logEvent("Gesture", "AUTO_BOOT_ACTION", "action=BOTH_HOME", this)
                 performAction(Action.BOTH_HOME)
             }
 
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to auto-run BOTH_HOME on boot", e)
+            DiagnosticsLogger.logException("Gesture", e, this)
         }
     }
 
@@ -84,6 +86,7 @@ class HomeKeyInterceptorService : AccessibilityService(), SharedPreferences.OnSh
         val isActualHomeButton = event.scanCode == 102
 
         if (isInterceptionActive && event.keyCode == KeyEvent.KEYCODE_HOME && isActualHomeButton) {
+            DiagnosticsLogger.logEvent("Gesture", "HOME_PRESS", "source=AccessibilityService action=${event.action}", this)
             handleHomeGesture(event)
             return true // Consume the event
         }
@@ -97,12 +100,13 @@ class HomeKeyInterceptorService : AccessibilityService(), SharedPreferences.OnSh
             multiPressTimeoutRunnable?.let {
                 gestureHandler.removeCallbacks(it)
                 multiPressTimeoutRunnable = null
+                 DiagnosticsLogger.logEvent("Gesture", "GESTURE_DISCARDED", "reason=new_press_started", this)
             }
 
             // On first press, schedule long-press detection
             if (homePressCount == 0) {
                 longPressRunnable = Runnable {
-                    Log.d(TAG, "Long press detected.")
+                    DiagnosticsLogger.logEvent("Gesture", "GESTURE_RECOGNIZED", "gesture=LONG_HOME", this)
                     resolveGesture(isLongPress = true)
                     resetGestureState()
                 }
@@ -132,6 +136,15 @@ class HomeKeyInterceptorService : AccessibilityService(), SharedPreferences.OnSh
             }
 
             multiPressTimeoutRunnable = Runnable {
+                val gesture = when (homePressCount) {
+                    1 -> Gesture.SINGLE_HOME
+                    2 -> Gesture.DOUBLE_HOME
+                    3 -> Gesture.TRIPLE_HOME
+                    else -> null
+                }
+                if(gesture != null) {
+                     DiagnosticsLogger.logEvent("Gesture", "GESTURE_RECOGNIZED", "gesture=$gesture candidateCount=$homePressCount", this)
+                }
                 resolveGesture(isLongPress = false)
             }
             gestureHandler.postDelayed(multiPressTimeoutRunnable!!, timeout)
@@ -142,7 +155,7 @@ class HomeKeyInterceptorService : AccessibilityService(), SharedPreferences.OnSh
     private fun resolveGesture(isLongPress: Boolean = false) {
         val now = SystemClock.uptimeMillis()
         if (now - lastGestureTimestamp < 200) {
-            Log.d(TAG, "Gesture ignored due to debounce")
+             DiagnosticsLogger.logEvent("Gesture", "GESTURE_DISCARDED", "reason=debounce", this)
             return
         }
         lastGestureTimestamp = now
@@ -160,7 +173,7 @@ class HomeKeyInterceptorService : AccessibilityService(), SharedPreferences.OnSh
 
         if (gesture != null) {
             val action = getConfiguredActionForGesture(gesture)
-            Log.d(TAG, "Gesture: $gesture → Action: $action")
+            DiagnosticsLogger.logEvent("Gesture", "GESTURE_ACTION_DISPATCH", "gesture=$gesture action=$action", this)
 
             // Optional feedback
             provideHapticFeedback()
@@ -168,18 +181,24 @@ class HomeKeyInterceptorService : AccessibilityService(), SharedPreferences.OnSh
 
             // Trigger the launcher action
             performAction(action)
+        } else {
+            DiagnosticsLogger.logEvent("Gesture", "GESTURE_DISCARDED", "reason=no_matching_action pressCount=$homePressCount", this)
         }
 
         resetGestureState()
     }
 
     private fun performAction(action: Action) {
-        Log.d(TAG, "Performing action: $action")
+        DiagnosticsLogger.logEvent("Launcher", "PERFORM_ACTION_TRIGGERED", "action=$action", this)
         when (action) {
             Action.TOP_HOME -> actionLauncher.launchTop()
             Action.BOTTOM_HOME -> actionLauncher.launchBottom()
             Action.BOTH_HOME -> actionLauncher.launchBoth()
             Action.NONE -> { /* no-op */ }
+            Action.APP_SWITCH -> {
+                DiagnosticsLogger.logEvent("Gesture", "ACTION_RECENTS_TRIGGERED", context = this)
+                performGlobalAction(GLOBAL_ACTION_RECENTS)
+            }
         }
     }
 
@@ -194,7 +213,7 @@ class HomeKeyInterceptorService : AccessibilityService(), SharedPreferences.OnSh
     private fun updateGestureConfig() {
         useSystemDoubleTapDelay = prefs.getBoolean(KEY_USE_SYSTEM_DOUBLE_TAP_DELAY, true)
         customDoubleTapDelay = prefs.getInt(KEY_CUSTOM_DOUBLE_TAP_DELAY, ViewConfiguration.getDoubleTapTimeout())
-        Log.d(TAG, "Gesture config updated.")
+        DiagnosticsLogger.logEvent("Prefs", "GESTURE_CONFIG_UPDATED", "useSystemDelay=$useSystemDoubleTapDelay customDelay=$customDoubleTapDelay", this)
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
@@ -252,13 +271,13 @@ class HomeKeyInterceptorService : AccessibilityService(), SharedPreferences.OnSh
     }
 
     override fun onInterrupt() {
-        Log.d(TAG, "Accessibility service interrupted")
+        DiagnosticsLogger.logEvent("Service", "ACCESSIBILITY_INTERRUPTED", context = this)
         instance = null
         resetGestureState()
     }
 
     override fun onUnbind(intent: Intent?): Boolean {
-        Log.d(TAG, "Accessibility service unbound")
+        DiagnosticsLogger.logEvent("Service", "ACCESSIBILITY_UNBOUND", context = this)
         instance = null
         stopKeepAliveService()
         resetGestureState()
@@ -267,6 +286,7 @@ class HomeKeyInterceptorService : AccessibilityService(), SharedPreferences.OnSh
 
     override fun onDestroy() {
         super.onDestroy()
+        DiagnosticsLogger.logEvent("Service", "ACCESSIBILITY_DESTROYED", context = this)
         stopKeepAliveService()
         prefs.unregisterOnSharedPreferenceChangeListener(this)
         serviceScope.cancel()
@@ -278,7 +298,7 @@ class HomeKeyInterceptorService : AccessibilityService(), SharedPreferences.OnSh
             val intent = Intent(this, KeepAliveService::class.java)
             stopService(intent)
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to stop KeepAliveService", e)
+            DiagnosticsLogger.logException("Service", e, this)
         }
     }
 }

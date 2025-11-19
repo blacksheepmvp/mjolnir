@@ -29,3 +29,6 @@ const val KEY_LONG_HOME_ACTION = "LONG_HOME_ACTION"
 const val KEY_USE_SYSTEM_DOUBLE_TAP_DELAY = "USE_SYSTEM_DOUBLE_TAP_DELAY"
 const val KEY_CUSTOM_DOUBLE_TAP_DELAY = "CUSTOM_DOUBLE_TAP_DELAY"
 const val KEY_AUTO_BOOT_BOTH_HOME = "autoBootBothHomeOnServiceStart"
+
+// Key for app picker blacklist
+const val KEY_APP_BLACKLIST = "APP_BLACKLIST"

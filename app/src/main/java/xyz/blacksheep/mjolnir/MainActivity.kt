@@ -61,6 +61,7 @@ import xyz.blacksheep.mjolnir.settings.SettingsItem
 import xyz.blacksheep.mjolnir.settings.SettingsScreen
 import xyz.blacksheep.mjolnir.settings.getLaunchableApps
 import xyz.blacksheep.mjolnir.ui.theme.MjolnirTheme
+import xyz.blacksheep.mjolnir.utils.DiagnosticsLogger
 import xyz.blacksheep.mjolnir.utils.DualScreenLauncher
 import xyz.blacksheep.mjolnir.utils.showTestNotification
 
@@ -81,7 +82,7 @@ class MainActivity : ComponentActivity() {
 
         WindowCompat.setDecorFitsSystemWindows(window, false)
 
-        val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
         val directoryPickerLauncher = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
             uri?.let {
@@ -335,6 +336,10 @@ class MainActivity : ComponentActivity() {
                         currentPath = prefs.getString(KEY_ROM_DIR_URI, "") ?: "",
                         currentTheme = theme,
                         onThemeChange = { newTheme ->
+                            val oldTheme = theme
+                            if (oldTheme != newTheme) {
+                                DiagnosticsLogger.logEvent("Prefs", "PREF_CHANGED", "key=$KEY_THEME old=${oldTheme.name} new=${newTheme.name}", this@MainActivity)
+                            }
                             prefs.edit { putString(KEY_THEME, newTheme.name) }
                             theme = newTheme
                         },
@@ -342,31 +347,55 @@ class MainActivity : ComponentActivity() {
                         onClose = { showSettings = false },
                         confirmDelete = confirmDelete,
                         onConfirmDeleteChange = { newConfirm ->
+                            val oldConfirm = confirmDelete
+                             if (oldConfirm != newConfirm) {
+                                DiagnosticsLogger.logEvent("Prefs", "PREF_CHANGED", "key=$KEY_CONFIRM_DELETE old=$oldConfirm new=$newConfirm", this@MainActivity)
+                            }
                             prefs.edit { putBoolean(KEY_CONFIRM_DELETE, newConfirm) }
                             confirmDelete = newConfirm
                         },
                         autoCreateFile = autoCreateFile,
                         onAutoCreateFileChange = { newAutoCreate ->
+                            val oldAutoCreate = autoCreateFile
+                            if (oldAutoCreate != newAutoCreate) {
+                                DiagnosticsLogger.logEvent("Prefs", "PREF_CHANGED", "key=$KEY_AUTO_CREATE_FILE old=$oldAutoCreate new=$newAutoCreate", this@MainActivity)
+                            }
                             prefs.edit { putBoolean(KEY_AUTO_CREATE_FILE, newAutoCreate) }
                             autoCreateFile = newAutoCreate
                         },
                         devMode = devMode,
                         onDevModeChange = { newDevMode ->
+                            val oldDevMode = devMode
+                            if (oldDevMode != newDevMode) {
+                                DiagnosticsLogger.logEvent("Prefs", "PREF_CHANGED", "key=$KEY_DEV_MODE old=$oldDevMode new=$newDevMode", this@MainActivity)
+                            }
                             prefs.edit { putBoolean(KEY_DEV_MODE, newDevMode) }
                             devMode = newDevMode
                         },
                         topApp = topApp,
                         onTopAppChange = { newTopApp ->
+                            val oldTopApp = topApp
+                            if (oldTopApp != newTopApp) {
+                                DiagnosticsLogger.logEvent("Prefs", "PREF_CHANGED", "key=$KEY_TOP_APP old=$oldTopApp new=$newTopApp", this@MainActivity)
+                            }
                             prefs.edit { putString(KEY_TOP_APP, newTopApp) }
                             topApp = newTopApp
                         },
                         bottomApp = bottomApp,
                         onBottomAppChange = { newBottomApp ->
+                            val oldBottomApp = bottomApp
+                            if (oldBottomApp != newBottomApp) {
+                                DiagnosticsLogger.logEvent("Prefs", "PREF_CHANGED", "key=$KEY_BOTTOM_APP old=$oldBottomApp new=$newBottomApp", this@MainActivity)
+                            }
                             prefs.edit { putString(KEY_BOTTOM_APP, newBottomApp) }
                             bottomApp = newBottomApp
                         },
                         showAllApps = showAllApps,
                         onShowAllAppsChange = { newShowAllApps ->
+                            val oldShowAllApps = showAllApps
+                            if (oldShowAllApps != newShowAllApps) {
+                                DiagnosticsLogger.logEvent("Prefs", "PREF_CHANGED", "key=$KEY_SHOW_ALL_APPS old=$oldShowAllApps new=$newShowAllApps", this@MainActivity)
+                            }
                             prefs.edit { putBoolean(KEY_SHOW_ALL_APPS, newShowAllApps) }
                             showAllApps = newShowAllApps
                         },
@@ -392,6 +421,10 @@ class MainActivity : ComponentActivity() {
                         mainScreen = mainScreen,
                         onMainScreenChange = {
                                 newMainScreen ->
+                            val oldMainScreen = mainScreen
+                            if (oldMainScreen != newMainScreen) {
+                                DiagnosticsLogger.logEvent("Prefs", "PREF_CHANGED", "key=$KEY_MAIN_SCREEN old=${oldMainScreen.name} new=${newMainScreen.name}", this@MainActivity)
+                            }
                             prefs.edit { putString(KEY_MAIN_SCREEN, newMainScreen.name) }
                             mainScreen = newMainScreen
                         }

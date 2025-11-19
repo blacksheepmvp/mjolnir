@@ -4,5 +4,6 @@ enum class Action {
     NONE,
     TOP_HOME,
     BOTTOM_HOME,
-    BOTH_HOME
+    BOTH_HOME,
+    APP_SWITCH
 }

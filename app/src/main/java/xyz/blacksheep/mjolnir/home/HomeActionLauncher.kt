@@ -1,7 +1,6 @@
 package xyz.blacksheep.mjolnir.home
 
 import android.content.Context
-import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -12,6 +11,7 @@ import xyz.blacksheep.mjolnir.KEY_TOP_APP
 import xyz.blacksheep.mjolnir.PREFS_NAME
 import xyz.blacksheep.mjolnir.settings.MainScreen
 import xyz.blacksheep.mjolnir.settings.getLaunchableApps
+import xyz.blacksheep.mjolnir.utils.DiagnosticsLogger
 import xyz.blacksheep.mjolnir.utils.DualScreenLauncher
 
 /**
@@ -25,10 +25,10 @@ class HomeActionLauncher(private val context: Context) {
     private val scope = CoroutineScope(Dispatchers.Main)
 
     fun launchTop() {
-        Log.d("Mjolnir", "launchTop action requested")
         val topAppPkg = prefs.getString(KEY_TOP_APP, null)
+        DiagnosticsLogger.logEvent("Launcher", "LAUNCH_ATTEMPT", "slot=TOP package=$topAppPkg", context)
         if (topAppPkg == null) {
-            Log.w("Mjolnir", "Top app not set, cannot launch.")
+            DiagnosticsLogger.logEvent("Launcher", "EMPTY_SLOT_ACTIVATED", "slot=TOP behavior=NONE", context)
             return
         }
 
@@ -37,17 +37,22 @@ class HomeActionLauncher(private val context: Context) {
         val topApp = launcherApps.find { it.packageName == topAppPkg }
 
         if (topApp != null) {
-            DualScreenLauncher.launchOnTop(context, topApp.launchIntent)
+            try {
+                DualScreenLauncher.launchOnTop(context, topApp.launchIntent)
+                DiagnosticsLogger.logEvent("Launcher", "LAUNCH_SUCCESS", "slot=TOP package=$topAppPkg", context)
+            } catch (e: Exception) {
+                DiagnosticsLogger.logEvent("Error", "LAUNCH_FAILED", "slot=TOP package=$topAppPkg message=${e.message}", context)
+            }
         } else {
-            Log.e("Mjolnir", "Could not find top launcher app: $topAppPkg")
+            DiagnosticsLogger.logEvent("Error", "LAUNCH_FAILED", "slot=TOP package=$topAppPkg message=App not found", context)
         }
     }
 
     fun launchBottom() {
-        Log.d("Mjolnir", "launchBottom action requested")
         val bottomAppPkg = prefs.getString(KEY_BOTTOM_APP, null)
+        DiagnosticsLogger.logEvent("Launcher", "LAUNCH_ATTEMPT", "slot=BOTTOM package=$bottomAppPkg", context)
         if (bottomAppPkg == null) {
-            Log.w("Mjolnir", "Bottom app not set, cannot launch.")
+            DiagnosticsLogger.logEvent("Launcher", "EMPTY_SLOT_ACTIVATED", "slot=BOTTOM behavior=NONE", context)
             return
         }
 
@@ -56,21 +61,26 @@ class HomeActionLauncher(private val context: Context) {
         val bottomApp = launcherApps.find { it.packageName == bottomAppPkg }
 
         if (bottomApp != null) {
-            DualScreenLauncher.launchOnBottom(context, bottomApp.launchIntent)
+            try {
+                DualScreenLauncher.launchOnBottom(context, bottomApp.launchIntent)
+                DiagnosticsLogger.logEvent("Launcher", "LAUNCH_SUCCESS", "slot=BOTTOM package=$bottomAppPkg", context)
+            } catch (e: Exception) {
+                DiagnosticsLogger.logEvent("Error", "LAUNCH_FAILED", "slot=BOTTOM package=$bottomAppPkg message=${e.message}", context)
+            }
         } else {
-            Log.e("Mjolnir", "Could not find bottom launcher app: $bottomAppPkg")
+            DiagnosticsLogger.logEvent("Error", "LAUNCH_FAILED", "slot=BOTTOM package=$bottomAppPkg message=App not found", context)
         }
     }
 
     fun launchBoth() {
-        Log.d("Mjolnir", "launchBoth action requested")
         scope.launch {
             val topAppPkg = prefs.getString(KEY_TOP_APP, null)
             val bottomAppPkg = prefs.getString(KEY_BOTTOM_APP, null)
             val mainScreen = MainScreen.valueOf(prefs.getString(KEY_MAIN_SCREEN, MainScreen.TOP.name) ?: MainScreen.TOP.name)
+            DiagnosticsLogger.logEvent("Launcher", "LAUNCH_ATTEMPT", "slot=BOTH packageTop=$topAppPkg packageBottom=$bottomAppPkg mainScreen=$mainScreen", context)
 
             if (topAppPkg == null || bottomAppPkg == null) {
-                Log.w("Mjolnir", "Top or bottom app not set for dual launch.")
+                DiagnosticsLogger.logEvent("Launcher", "EMPTY_SLOT_ACTIVATED", "slot=BOTH behavior=NONE", context)
                 return@launch
             }
 
@@ -80,9 +90,17 @@ class HomeActionLauncher(private val context: Context) {
             val bottomApp = launcherApps.find { it.packageName == bottomAppPkg }
 
             if (topApp != null && bottomApp != null) {
-                DualScreenLauncher.launchOnDualScreens(context, topApp.launchIntent, bottomApp.launchIntent, mainScreen)
+                try {
+                    DualScreenLauncher.launchOnDualScreens(context, topApp.launchIntent, bottomApp.launchIntent, mainScreen)
+                    DiagnosticsLogger.logEvent("Launcher", "LAUNCH_SUCCESS", "slot=BOTH packageTop=$topAppPkg packageBottom=$bottomAppPkg", context)
+                } catch (e: Exception) {
+                    DiagnosticsLogger.logEvent("Error", "LAUNCH_FAILED", "slot=BOTH packageTop=$topAppPkg packageBottom=$bottomAppPkg message=${e.message}", context)
+                }
             } else {
-                Log.e("Mjolnir", "Could not find one or both apps for dual launch.")
+                val notFound = mutableListOf<String>()
+                if(topApp == null) notFound.add("TOP")
+                if(bottomApp == null) notFound.add("BOTTOM")
+                DiagnosticsLogger.logEvent("Error", "LAUNCH_FAILED", "slot=BOTH message=App not found in slots: ${notFound.joinToString()}", context)
             }
         }
     }

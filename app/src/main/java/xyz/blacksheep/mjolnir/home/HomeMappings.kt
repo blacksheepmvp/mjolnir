@@ -9,6 +9,7 @@ fun actionLabel(action: Action): String {
         Action.TOP_HOME -> "Top screen home"
         Action.BOTTOM_HOME -> "Bottom screen home"
         Action.BOTH_HOME -> "Both screens home"
+        Action.APP_SWITCH -> "Recent apps"
     }
 }
 

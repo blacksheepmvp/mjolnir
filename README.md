@@ -2,27 +2,43 @@
 
 ## 🔨 Mjolnir
 
-Mjolnir is a utility application designed specifically for the **AYN Thor** dual-screen Android gaming handheld, but it should work with any Android device running Android 7.0 or later.
-
-This release, **v0.2.2**, introduces a number of UI and UX refinements, as well as some minor bug fixes. The core features of Mjolnir are the **Dual-Screen Home Launcher** and the **Steam File Generator** tool.
-
 ---
 
-## ✨ Core Feature: Dual-Screen Home Launcher
+## 🏠 Dual-Screen Home Launcher
 
-Mjolnir can be set as your default home screen, allowing you to launch two different apps simultaneously—one on the top screen and one on the bottom—every time you press the Home button.
+Mjolnir allows you to transform your Home button into a powerful dual-screen controller.
 
-### Workaround for AYN Thor App Switcher Bug
+### How it Works
+*   **Accessibility Service:** Mjolnir uses an accessibility service to capture Home button inputs (and nothing else).
+*   **Custom Configuration:** You configure exactly what happens when you press Home: launch an app on the top screen, the bottom screen, or both.
+*   **Preserve App Switcher (AYN Thor):** For the AYN Thor, this service allows you to keep **Quickstep** as your default home app. This ensures you don't lose your Recents/App Switcher functionality while still enjoying a custom dual-screen home experience.
+*   **Device Support:** While designed for the Thor, it should work on other dual-screen devices (confirmation pending).
 
-Currently, a firmware bug on the AYN Thor breaks the Recents/App Switcher screen when a third-party launcher is set as default. Mjolnir provides a workaround to restore this functionality:
+### Setup Guide
 
-1.  **Add Quick Tile:** Add the "Mjolnir Home" tile to your Quick Settings panel.
-2.  **Enable Service:** Tap the tile to open Accessibility settings and enable the "Mjolnir Home Button Interceptor" service. This allows Mjolnir to detect Home button presses.
-3.  **Toggle Functionality:**
-    *   **Tile ON:** Mjolnir's dual-launch function is active. QuickStep MUST be set as the default launcher. This tile will override it properly.
-    *   **Tile OFF:** Your default launcher (e.g., QuickStep) will handle the Home button press.
+1.  **Install:** Download and install the latest release from [this repository](https://github.com/blacksheepmvp/mjolnir).
+    *   *(Optional) Add to [Obtanium](https://github.com/ImranR98/Obtainium) for automatic updates.*
+2.  **Initialize:** Open Mjolnir and select **Initialize Mjolnir Home**.
+3.  **Permissions:**
+    *   Grant **Notification Permissions** so the background service can stay active.
+    *   Enable the **Mjolnir Accessibility Service** when prompted to allow home button capture.
+4.  **Quick Tile (Optional):** Add the **Mjolnir Home** quick tile to your notification shade to easily toggle the Home key override on/off.
 
-This setup ensures you can use the dual-launcher feature while retaining full access to the App Switcher. This workaround will not be needed once AYN fixes the App Switcher bug in an OTA update.
+### Configuration
+
+1.  **Select Apps:** Go to **Mjolnir Home Settings** in the menu.
+    *   Select the apps you want for your Top and Bottom screens.
+    *   *Note:* By default, the list shows only launchers/frontends. You can remove the filter to pick any app installed on your device.
+2.  **Customize Gestures:** Scroll down to configure actions for:
+    *   Single Press
+    *   Double Press
+    *   Triple Press
+    *   Long Press
+    *   *Actions include: Top Screen Home, Bottom Screen Home, Both Screens, Open Recents, or Do Nothing.*
+3.  **Double-Tap Delay:** Adjust the double-tap detection speed or use the system default.
+4.  **Set Default Home:**
+    *   **AYN THOR USERS:** Ensure **Quickstep** is set as your system default home app. This keeps your App Switcher working correctly. Mjolnir handles the rest.
+5.  **Enable:** Use the toggle in the main menu or the Quick Tile to enable Mjolnir Home. Press Home and enjoy!
 
 ---
 
@@ -33,6 +49,8 @@ Mjolnir also includes a tool to streamline adding PC games to Android frontends 
 *   **Automated File Creation:** Quickly generates `.steam` files with the correct Steam AppID.
 *   **Multiple Input Methods:** Create files by sharing a `steamdb.info` URL to Mjolnir or by manually entering the AppID.
 *   **File Management:** Lists existing files, provides overwrite protection, and supports multi-select deletion.
+
+Note: this tool is going to be separated from Mjolnir and released as a standalone app in future releases.
 
 ---
 
@@ -49,4 +67,4 @@ This project requires **Android Studio** and the necessary SDKs for building. Cl
 
 ## 🤝 Contributing
 
-If you have suggestions or bug reports, please open an issue.
+If you have suggestions, bug reports, or feature requests, please open an issue or leave a comment on the release video. Thanks for checking out Mjolnir!
