@@ -65,6 +65,20 @@ import xyz.blacksheep.mjolnir.utils.DiagnosticsLogger
 import xyz.blacksheep.mjolnir.utils.DualScreenLauncher
 import xyz.blacksheep.mjolnir.utils.showTestNotification
 
+/**
+ * The main entry point of the application.
+ *
+ * **Role:**
+ * - Serves as the primary UI shell for the "Dashboard" view (Tools list).
+ * - Acts as the system's Home Activity if configured by the user.
+ * - Orchestrates the setup flow (Permissions, Accessibility).
+ * - Initializes the app theme and edge-to-edge window handling.
+ *
+ * **Special Behavior:**
+ * - If launched with `CATEGORY_HOME` (i.e., user pressed the physical Home button),
+ *   it immediately delegates to [HomeActionLauncher] to perform the dual-screen launch action
+ *   and finishes without showing UI. This creates the "invisible launcher" effect.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {

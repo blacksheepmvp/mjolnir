@@ -13,14 +13,24 @@ import android.view.WindowManager
 import xyz.blacksheep.mjolnir.utils.DiagnosticsLogger
 
 /**
- * Workaround for AYN Thor "Focus-Lock: Top Only" input bug.
+ * A hacky but necessary workaround for a firmware bug on the AYN Thor device.
  *
- * When Focus-Lock is set to "Top Only", launching an app on the top screen
- * that is already running can result in the controller input stopping (lost focus).
+ * **The Bug:**
+ * When the device's "Focus Lock" setting is set to "Top Only" (forcing controller input to the top screen),
+ * switching focus *back* to an already-running activity on the top screen can sometimes cause the input
+ * system to hang or lose focus entirely.
  *
- * This workaround briefly creates an invisible 1x1 pixel overlay window
- * that is focusable. This forces the WindowManager to re-evaluate focus
- * and routing, effectively restoring input to the top app once the overlay is removed.
+ * **The Fix:**
+ * This object briefly (100ms) injects a 1x1 pixel, focusable, invisible overlay window into the WindowManager.
+ *
+ * **Mechanism:**
+ * 1. The overlay appears and steals window focus from the system.
+ * 2. The overlay is removed 100ms later.
+ * 3. The Android WindowManager is forced to re-calculate the "topmost" focused window.
+ * 4. Focus correctly falls back to the intended Top Screen activity, restoring controller input.
+ *
+ * **Requirement:**
+ * Requires `ACTION_MANAGE_OVERLAY_PERMISSION` (Display over other apps).
  */
 object FocusLockOverlayWorkaround {
 
@@ -31,6 +41,11 @@ object FocusLockOverlayWorkaround {
     // Keep track of the current overlay view to ensure we remove it
     private var currentOverlayView: View? = null
 
+    /**
+     * Trigger the workaround sequence.
+     *
+     * @param service The AccessibilityService context (needed for WindowManager token and permission check).
+     */
     fun run(service: AccessibilityService) {
         // 1. Check Permission
         if (!Settings.canDrawOverlays(service)) {

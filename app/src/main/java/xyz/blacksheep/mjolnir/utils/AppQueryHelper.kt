@@ -7,14 +7,37 @@ import android.graphics.drawable.Drawable
 import xyz.blacksheep.mjolnir.KEY_APP_BLACKLIST
 import xyz.blacksheep.mjolnir.PREFS_NAME
 
+/**
+ * A simple data class holding the display information for an installed application.
+ *
+ * @property packageName The unique Android package name (e.g., "com.example.app").
+ * @property label The human-readable name of the application (e.g., "My App").
+ * @property icon The application's launcher icon as a Drawable.
+ */
 data class AppInfo(
     val packageName: String,
     val label: String,
     val icon: Drawable
 )
 
+/**
+ * A helper class for querying, filtering, and retrieving metadata about installed applications.
+ *
+ * It handles:
+ * - Retrieving standard launcher apps and home screen replacements.
+ * - Applying user-defined blacklists stored in SharedPreferences.
+ * - Caching application icons in memory to improve list scrolling performance.
+ *
+ * @param context The application context used for accessing PackageManager and SharedPreferences.
+ */
 class AppQueryHelper(private val context: Context) {
 
+    /**
+     * Retrieves the current set of blacklisted package names from SharedPreferences.
+     *
+     * If no blacklist is found, it defaults to hiding the system launcher (Quickstep)
+     * and Android Settings to avoid cluttering the Mjolnir launcher.
+     */
     private fun getBlacklist(): Set<String> {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         // Default to blacklisting Quickstep (com.android.launcher3) and Android Settings if no preference exists
@@ -24,9 +47,16 @@ class AppQueryHelper(private val context: Context) {
 
     /**
      * Returns the complete, canonical list of all launchable apps on the system.
-     * Includes standard Launchers AND Home apps (Quickstep).
-     * NO FILTERS applied.
-     * Use this for the Blacklist Management UI.
+     *
+     * **Scope:**
+     * - Includes standard `CATEGORY_LAUNCHER` apps.
+     * - Includes `CATEGORY_HOME` apps (other launchers).
+     * - **NO FILTERS** are applied (blacklisted apps are included).
+     *
+     * **Use Case:**
+     * - Use this method when populating the Blacklist Management UI, where users need to see *everything* to decide what to hide.
+     *
+     * @return A sorted list of [AppInfo] objects.
      */
     fun queryCanonicalApps(): List<AppInfo> {
         val pm = context.packageManager
@@ -58,8 +88,16 @@ class AppQueryHelper(private val context: Context) {
     }
 
     /**
-     * Returns the list for the Picker when "Filter Apps" is OFF.
-     * Logic: Canonical List MINUS Blacklist.
+     * Returns the list of apps for the Launcher Picker when "Filter Apps" is **OFF**.
+     *
+     * **Logic:**
+     * - Starts with [queryCanonicalApps] (everything).
+     * - Removes any app present in the blacklist.
+     *
+     * **Use Case:**
+     * - Use this when the user wants to select an app for the top/bottom screen from *all* available apps (minus hidden ones).
+     *
+     * @return A filtered and sorted list of [AppInfo].
      */
     fun queryAllApps(): List<AppInfo> {
         val blacklist = getBlacklist()
@@ -69,8 +107,16 @@ class AppQueryHelper(private val context: Context) {
     }
 
     /**
-     * Returns the list for the Picker when "Filter Apps" is ON.
-     * Logic: Only HOME apps (Quickstep, Nova, etc) MINUS Blacklist.
+     * Returns the list of apps for the Launcher Picker when "Filter Apps" is **ON**.
+     *
+     * **Logic:**
+     * - Queries ONLY `CATEGORY_HOME` apps (other launchers).
+     * - Removes any app present in the blacklist.
+     *
+     * **Use Case:**
+     * - Use this when the user specifically wants to chain-load another launcher (e.g., Nova, Daijishō) and hide regular apps.
+     *
+     * @return A filtered and sorted list of [AppInfo].
      */
     fun queryLauncherApps(): List<AppInfo> {
         val pm = context.packageManager
@@ -100,6 +146,16 @@ class AppQueryHelper(private val context: Context) {
         // volatile in-memory cache, shared across the app process
         private val iconCache = mutableMapOf<String, Drawable>()
 
+        /**
+         * Retrieves an icon from the in-memory cache or loads it from the PackageManager if missing.
+         *
+         * This method is thread-safe enough for UI usage but heavy if the cache is cold.
+         * See [prewarmAllApps] for background loading.
+         *
+         * @param pm The PackageManager instance.
+         * @param packageName The package name to look up.
+         * @return The application icon Drawable.
+         */
         fun getOrCacheIcon(pm: PackageManager, packageName: String): Drawable {
             return iconCache.getOrPut(packageName) {
                 pm.getApplicationIcon(packageName)
@@ -107,7 +163,14 @@ class AppQueryHelper(private val context: Context) {
         }
 
         /**
-         * Prewarm icon cache for all launchable apps.
+         * Pre-loads icons for all launchable apps into the in-memory cache.
+         *
+         * **Performance Note:**
+         * This should be called on a background thread (e.g., `Dispatchers.IO`) during app startup.
+         * It ensures that subsequent calls to [queryCanonicalApps] or [getOrCacheIcon] return instantly
+         * without causing frame drops during UI scrolling.
+         *
+         * @param context Android Context.
          */
         fun prewarmAllApps(context: Context) {
             val pm = context.packageManager

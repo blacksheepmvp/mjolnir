@@ -95,6 +95,15 @@ import xyz.blacksheep.mjolnir.utils.SteamTool
 
 private const val ACTION_CCT_URL_RETURN = "xyz.blacksheep.mjolnir.ACTION_CCT_URL_RETURN"
 
+/**
+ * Activity for generating `.steam` shortcut files that allow the Steam client to launch non-Steam games.
+ *
+ * **Features:**
+ * - **Chrome Custom Tabs Integration:** Allows users to browse SteamDB directly within the app.
+ * - **Deep Link Handling:** Intercepts shared URLs from the browser or CCT to extract Steam App IDs.
+ * - **File Management:** Lists, creates, and deletes `.steam` files in the user-specified ROMs directory.
+ * - **Metadata Fetching:** Uses [SteamTool] to pull game names and images from the Steam Store API.
+ */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 class SteamFileGenActivity : ComponentActivity() {
     private val intentState = mutableStateOf<Intent?>(null)
@@ -103,11 +112,17 @@ class SteamFileGenActivity : ComponentActivity() {
     companion object {
         const val EXTRA_FORCE_SETUP = "xyz.blacksheep.mjolnir.FORCE_SETUP"
 
+        /**
+         * Checks if the user has already selected a valid ROMs directory.
+         */
         fun isRomDirectorySet(context: Context): Boolean {
             val prefs = context.getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
             return !prefs.getString(KEY_ROM_DIR_URI, null).isNullOrBlank()
         }
 
+        /**
+         * Creates an Intent to launch this activity in "Setup Mode," forcing the directory picker.
+         */
         fun createSetupIntent(context: Context): Intent {
             return Intent(context, SteamFileGenActivity::class.java).apply {
                 putExtra(EXTRA_FORCE_SETUP, true)
@@ -120,6 +135,7 @@ class SteamFileGenActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         isNewTask = isTaskRoot
 
+        // Case 1: Headless sharing (User shared a link from Chrome to Mjolnir)
         if (intent?.action == Intent.ACTION_SEND && isNewTask) {
             CoroutineScope(Dispatchers.Main).launch {
                 val result = handleShareIntentHeadless(intent)
@@ -131,6 +147,7 @@ class SteamFileGenActivity : ComponentActivity() {
 
         WindowCompat.setDecorFitsSystemWindows(window, false)
 
+        // Case 2: Return from Chrome Custom Tab (CCT) via Custom Action
         var intentToProcess = intent
         if (intent?.action == ACTION_CCT_URL_RETURN) {
             Log.e("MjolnirCCT_DEBUG", "CALLBACK RECEIVED! Full Intent Dump:")
@@ -223,6 +240,12 @@ class SteamFileGenActivity : ComponentActivity() {
         }
     }
 
+    /**
+     * Handles URL sharing without showing the UI (Headless mode).
+     *
+     * Extracts the AppID, fetches metadata, and creates the file immediately.
+     * Returns a status string to be toasted.
+     */
     private suspend fun handleShareIntentHeadless(intent: Intent): String = withContext(Dispatchers.IO) {
         val url = intent.getStringExtra(Intent.EXTRA_TEXT)
         val appId = url?.let { SteamTool.extractAppIdFromUrl(it) }

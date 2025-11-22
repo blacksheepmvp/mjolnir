@@ -27,6 +27,21 @@ import xyz.blacksheep.mjolnir.R
 import xyz.blacksheep.mjolnir.utils.DiagnosticsConfig
 import xyz.blacksheep.mjolnir.utils.DiagnosticsLogger
 
+/**
+ * A foreground service responsible for keeping the Mjolnir application process alive.
+ *
+ * **Why is this needed?**
+ * Android aggressively kills background processes to save memory. If the Mjolnir process dies:
+ * 1. The in-memory icon cache (`AppQueryHelper.iconCache`) is lost, causing lag on the next launch.
+ * 2. The Accessibility Service (`HomeKeyInterceptorService`) might be restarted or delayed.
+ * 3. The responsiveness of the Home button interception drops.
+ *
+ * **Key Behaviors:**
+ * - Starts as a Foreground Service with a persistent notification.
+ * - Updates the notification text dynamically based on app state (e.g., "Home button capture ENABLED").
+ * - Uses [AlarmManager] to auto-restart itself if the task is swiped away (see [onTaskRemoved]).
+ * - Listens to SharedPreferences to update the notification UI immediately when settings change.
+ */
 class KeepAliveService : Service(), SharedPreferences.OnSharedPreferenceChangeListener {
 
     private lateinit var prefs: SharedPreferences
@@ -59,6 +74,10 @@ class KeepAliveService : Service(), SharedPreferences.OnSharedPreferenceChangeLi
         DiagnosticsLogger.logEvent("Service", "KEEPALIVE_STOPPED", context = this)
     }
 
+    /**
+     * Called if the user swipes the app away from the "Recents" menu.
+     * We schedule an immediate restart via AlarmManager to ensure persistence.
+     */
     override fun onTaskRemoved(rootIntent: Intent?) {
         super.onTaskRemoved(rootIntent)
         DiagnosticsLogger.logEvent("Service", "KEEPALIVE_TASK_REMOVED", "reason=clear_all", this)
@@ -103,6 +122,10 @@ class KeepAliveService : Service(), SharedPreferences.OnSharedPreferenceChangeLi
         }
     }
 
+    /**
+     * Builds and posts the persistent notification that anchors this service.
+     * The notification text reflects the current status of the Home Button Interceptor.
+     */
     private fun startForegroundInternal() {
         val pendingIntent: PendingIntent =
             Intent(this, MainActivity::class.java).let { notificationIntent ->
@@ -175,6 +198,9 @@ class KeepAliveService : Service(), SharedPreferences.OnSharedPreferenceChangeLi
         }
     }
 
+    /**
+     * Checks if the Mjolnir HomeKeyInterceptorService is actually enabled in System Settings.
+     */
     private fun isAccessibilityServiceEnabled(context: Context): Boolean {
         val am = context.getSystemService(Context.ACCESSIBILITY_SERVICE) as AccessibilityManager
         val enabledServices = am.getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_ALL_MASK)

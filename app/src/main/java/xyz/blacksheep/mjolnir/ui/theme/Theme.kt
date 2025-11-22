@@ -38,6 +38,20 @@ private val LightColorScheme = lightColorScheme(
     onSurface = Black,
 )
 
+/**
+ * The root theme Composable for the Mjolnir application.
+ *
+ * Applies the Material 3 design system with Mjolnir-specific overrides for colors and typography.
+ * Also handles system UI integration (status bar and navigation bar coloring).
+ *
+ * **Defaults:**
+ * - Forces Dark Mode by default (`darkTheme = true`).
+ * - Disables Dynamic Color (Monet) by default to maintain the app's specific aesthetic.
+ *
+ * @param darkTheme Whether to use the dark color scheme.
+ * @param dynamicColor Whether to use Android 12+ dynamic colors (wallpaper-based).
+ * @param content The Composable content to render within this theme.
+ */
 @Composable
 fun MjolnirTheme(
     darkTheme: Boolean = true, // Default to dark theme
@@ -54,11 +68,7 @@ fun MjolnirTheme(
         darkTheme -> DarkColorScheme
         else -> LightColorScheme
     }
-    //val view = LocalView.current
-    //if (!view.isInEditMode) {
-    //    val window = (view.context as Activity).window
-    //    window.statusBarColor = colorScheme.primary.toArgb()
-    //}
+
     val view = LocalView.current
     if (!view.isInEditMode) {
         // Use SideEffect to safely perform non-Compose operations

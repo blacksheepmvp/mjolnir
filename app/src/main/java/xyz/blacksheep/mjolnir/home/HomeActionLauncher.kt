@@ -15,21 +15,45 @@ import xyz.blacksheep.mjolnir.utils.DiagnosticsLogger
 import xyz.blacksheep.mjolnir.utils.DualScreenLauncher
 
 /**
- * The "Brains" of the home action system.
- * This class decides WHAT to do based on user preferences.
- * It delegates the HOW of launching to the DualScreenLauncher utility.
+ * The central coordinator for executing home-screen-like actions.
+ *
+ * This class bridges user preferences (which apps are assigned to which slots)
+ * with the low-level launch capabilities of [DualScreenLauncher].
+ *
+ * **Responsibilities:**
+ * 1. Reads current preferences (Top App, Bottom App, Main Screen focus).
+ * 2. Resolves package names to launchable Intents.
+ * 3. Handles "Single App" fallback logic (e.g., if only Top is set but user triggers Bottom).
+ * 4. Delegates the actual physical launch to [DualScreenLauncher].
+ * 5. Logs detailed diagnostics for every launch attempt.
+ *
+ * **Key Operations:**
+ * - [launchTop]: Triggers the action associated with the Top Screen.
+ * - [launchBottom]: Triggers the action associated with the Bottom Screen.
+ * - [launchBoth]: Triggers the simultaneous launch of both apps.
  */
 class HomeActionLauncher(private val context: Context) {
 
     private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     private val scope = CoroutineScope(Dispatchers.Main)
 
-    // Helper to get clean package name (treats "NOTHING" as null)
+    /**
+     * Helper to retrieve a sanitized package name from preferences.
+     * Treats the sentinel value "NOTHING" as null.
+     */
     private fun getCleanApp(key: String): String? {
         val pkg = prefs.getString(key, null)
         return if (pkg == "NOTHING") null else pkg
     }
 
+    /**
+     * Executes the logic for the "Top Home" action.
+     *
+     * **Fallback Logic:**
+     * - If a Top App is assigned, it launches on the Top Screen.
+     * - If NO Top App is assigned, but a Bottom App IS, it launches the Bottom App on the Top Screen.
+     * - If neither is assigned, it logs an "EMPTY_SLOT" event and does nothing.
+     */
     fun launchTop() {
         val topAppPkg = getCleanApp(KEY_TOP_APP)
         val bottomAppPkg = getCleanApp(KEY_BOTTOM_APP)
@@ -60,6 +84,14 @@ class HomeActionLauncher(private val context: Context) {
         }
     }
 
+    /**
+     * Executes the logic for the "Bottom Home" action.
+     *
+     * **Fallback Logic:**
+     * - If a Bottom App is assigned, it launches on the Bottom Screen.
+     * - If NO Bottom App is assigned, but a Top App IS, it launches the Top App on the Bottom Screen.
+     * - If neither is assigned, it logs an "EMPTY_SLOT" event and does nothing.
+     */
     fun launchBottom() {
         val topAppPkg = getCleanApp(KEY_TOP_APP)
         val bottomAppPkg = getCleanApp(KEY_BOTTOM_APP)
@@ -90,6 +122,17 @@ class HomeActionLauncher(private val context: Context) {
         }
     }
 
+    /**
+     * Executes the logic for the "Both Screens" action.
+     *
+     * **Behavior:**
+     * - If both slots have apps assigned: Launches both simultaneously using [DualScreenLauncher.launchOnDualScreens].
+     * - If only one slot has an app assigned: Launches that single app on the user's preferred [MainScreen].
+     * - If neither is assigned: Does nothing.
+     *
+     * **Focus:**
+     * The focus order is determined by [KEY_MAIN_SCREEN]. The "Main" screen app is launched *last* to ensure it receives input focus.
+     */
     fun launchBoth() {
         scope.launch {
             val topAppPkg = getCleanApp(KEY_TOP_APP)

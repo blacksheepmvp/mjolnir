@@ -28,6 +28,21 @@ import xyz.blacksheep.mjolnir.services.KeepAliveService
 import xyz.blacksheep.mjolnir.utils.DiagnosticsLogger
 import xyz.blacksheep.mjolnir.workarounds.FocusLockOverlayWorkaround
 
+/**
+ * The core engine of Mjolnir's gesture system.
+ *
+ * **Role:**
+ * - Listens for hardware Home button presses (Scan Code 102) using the Accessibility API.
+ * - Discriminates between Single, Double, Triple, and Long press gestures using timing logic.
+ * - Dispatches the configured [Action] to the [HomeActionLauncher].
+ * - Manages the lifecycle of the [KeepAliveService] to ensure the process remains active.
+ *
+ * **Key Behaviors:**
+ * - **Interceptor:** Consumes the `KEYCODE_HOME` event to prevent the system launcher from appearing.
+ * - **Gesture Recognition:** Uses [Handler.postDelayed] to wait for multi-tap sequences before committing to an action.
+ * - **Auto-Boot:** Optionally triggers the "Both Home" action immediately when the service connects (on device boot).
+ * - **Feedback:** Provides haptic feedback (vibration) upon successful gesture recognition.
+ */
 class HomeKeyInterceptorService : AccessibilityService(), SharedPreferences.OnSharedPreferenceChangeListener {
 
     companion object {
@@ -82,6 +97,15 @@ class HomeKeyInterceptorService : AccessibilityService(), SharedPreferences.OnSh
         }
     }
 
+    /**
+     * Intercepts raw key events from the system.
+     *
+     * **Logic:**
+     * 1. Checks if interception is globally enabled in Mjolnir settings.
+     * 2. Checks if the key is explicitly the physical Home button (Scan Code 102).
+     * 3. If yes, consumes the event (returns `true`) and routes it to [handleHomeGesture].
+     * 4. If no, passes the event through to the system.
+     */
     override fun onKeyEvent(event: KeyEvent): Boolean {
         val isInterceptionActive = prefs.getBoolean(KEY_HOME_INTERCEPTION_ACTIVE, false)
         val isActualHomeButton = event.scanCode == 102
@@ -94,6 +118,19 @@ class HomeKeyInterceptorService : AccessibilityService(), SharedPreferences.OnSh
         return super.onKeyEvent(event)
     }
 
+    /**
+     * The state machine for gesture detection.
+     *
+     * - **ACTION_DOWN:**
+     *   - Cancels any pending multi-press timeout (user is still tapping).
+     *   - Starts a timer for Long Press detection.
+     *   - Increments the press counter.
+     *
+     * - **ACTION_UP:**
+     *   - Cancels the Long Press timer (user let go before timeout).
+     *   - Starts the "Resolution Timer" (waiting for next tap).
+     *     - If timer expires: We commit to Single/Double/Triple press based on current count.
+     */
     private fun handleHomeGesture(event: KeyEvent) {
         if (event.action == KeyEvent.ACTION_DOWN) {
 

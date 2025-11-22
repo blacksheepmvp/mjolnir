@@ -12,6 +12,19 @@ import xyz.blacksheep.mjolnir.utils.DiagnosticsConfig
 import xyz.blacksheep.mjolnir.utils.DiagnosticsLogger
 import java.io.File
 
+/**
+ * The Application class for Mjolnir.
+ *
+ * **Role:**
+ * - Initializes app-wide singletons (Diagnostics, Notification Channels).
+ * - Manages process-level startup logic.
+ * - Triggers the background "Prewarm" of app icons to ensure UI responsiveness.
+ *
+ * **Process Awareness:**
+ * Mjolnir may run in multiple processes (e.g., `:keepalive` for the foreground service).
+ * Heavy initialization (like icon caching) is strictly limited to the main UI process
+ * to save memory in the background service.
+ */
 class MjolnirApp : Application() {
 
     override fun onCreate() {
@@ -41,6 +54,11 @@ class MjolnirApp : Application() {
         }
     }
 
+    /**
+     * Checks if the current process is the dedicated `:keepalive` process.
+     *
+     * @return `true` if this is the keepalive process, `false` if it is the main UI process.
+     */
     private fun isKeepAliveProcess(): Boolean {
         return try {
             val cmdline = File("/proc/self/cmdline").readText().trim { it <= ' ' }
@@ -50,6 +68,10 @@ class MjolnirApp : Application() {
         }
     }
 
+    /**
+     * Creates the NotificationChannel required for the [xyz.blacksheep.mjolnir.services.KeepAliveService].
+     * This must be done before the service attempts to post its foreground notification.
+     */
     private fun createPersistentNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(

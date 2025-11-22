@@ -130,9 +130,56 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import kotlin.math.roundToInt
 
+/**
+ * Represents the available visual themes supported by Mjolnir.
+ *
+ * This enum controls the global Material3 theme mode for the application.
+ *
+ * - `LIGHT`  → Forces a light theme regardless of system settings.
+ * - `DARK`   → Forces a dark theme regardless of system settings.
+ * - `SYSTEM` → Follows the device's system-wide light/dark setting.
+ *
+ * These values are stored in SharedPreferences and are used by the main
+ * Activity to configure theming via CompositionLocal providers.
+ */
 enum class AppTheme { LIGHT, DARK, SYSTEM }
+
+/**
+ * Indicates which physical display (Top or Bottom screen on the AYN Thor)
+ * should be considered the "primary" display during dual-screen launching.
+ *
+ * This preference affects:
+ * - Focus order when launching two apps simultaneously.
+ * - Which app is launched first during dual-launch sequences.
+ * - UI labels inside HomeLauncherSettingsMenu.
+ *
+ * NOTE:
+ * The actual display IDs are handled by `DualScreenLauncher` and are not
+ * defined here; this enum simply represents user preference.
+ */
 enum class MainScreen { TOP, BOTTOM }
 
+/**
+ * A custom `Saver` implementation for persisting and restoring [UiState]
+ * instances across configuration changes, process recreation, or navigation.
+ *
+ * This is used primarily by the Steam File Generator search UI, which must
+ * persist both intermediate loading states and successful search results
+ * (represented by [GameInfo]).
+ *
+ * Serialization Strategy:
+ * - `Idle`     → Stored as the string literal `"Idle"`.
+ * - `Loading`  → Stored as `["Loading", appId]`.
+ * - `Success`  → Serialized using [GameInfoSaver], prefixed by `"Success"`.
+ * - `Failure`  → Stored as `["Failure", errorMessage]`.
+ *
+ * Restoration Strategy:
+ * - Reconstructs the appropriate sealed UiState subtype based on the first
+ *   item of the serialized payload.
+ * - Delegates deserialization of GameInfo to [GameInfoSaver].
+ *
+ * This saver ensures UiState survives process death within Compose.
+ */
 val UiStateSaver = Saver<UiState, Any>(
     save = {
         when (it) {
@@ -159,6 +206,24 @@ val UiStateSaver = Saver<UiState, Any>(
         }
     }
 )
+
+/**
+ * Represents the different UI states of the Steam File Generator's search
+ * workflow. This sealed interface allows the Search UI to display:
+ *
+ * - Idle instructions
+ * - A loading indicator
+ * - A successful game metadata result
+ * - Errors from querying the API
+ *
+ * Subtypes:
+ * - [Idle]    → No search executed yet.
+ * - [Loading] → Actively querying Steam metadata for a given AppID.
+ * - [Success] → Query finished; metadata stored in [gameInfo].
+ * - [Failure] → Query failed; error message stored for display.
+ *
+ * These states are saved/restored using [UiStateSaver].
+ */
 sealed interface UiState {
     object Idle : UiState
     data class Loading(val appId: String) : UiState
@@ -166,6 +231,28 @@ sealed interface UiState {
     data class Failure(val error: String) : UiState
 }
 
+/**
+ * Displays a configurable launcher slot for either the Top or Bottom screen.
+ *
+ * This card is used inside HomeLauncherSettingsMenu to visually represent the
+ * currently assigned app for each screen. The card is fully clickable and
+ * behaves like a button that triggers the dropdown menu for app selection.
+ *
+ * Behavior:
+ * - **Empty state:** Shows a "+" icon and the provided label.
+ * - **Populated state:** Shows the app's icon (retrieved via `getPackageIcon`)
+ *   and the resolved app label.
+ *
+ * Layout:
+ * - Fixed height (120.dp)
+ * - Rounded corners and elevated surface
+ * - Centered column content
+ *
+ * @param app The launcher app currently assigned to this slot, or null if none.
+ * @param label User-facing label describing the slot ("Select Top Screen App").
+ * @param onClick Triggered when the user taps the card to expand the dropdown.
+ * @param modifier Optional layout modifier.
+ */
 @Composable
 fun AppSlotCard(
     modifier: Modifier = Modifier,
@@ -227,11 +314,42 @@ fun AppSlotCard(
     }
 }
 
+/**
+ * Converts an Android [Drawable] into a Compose [Painter] instance suitable
+ * for displaying inside Image composables.
+ *
+ * Behavior:
+ * - If the drawable is non-null, it is converted to a Bitmap and wrapped in
+ *   a [BitmapPainter].
+ * - If null, returns a transparent [ColorPainter].
+ *
+ * This helper ensures consistent image rendering within Compose without
+ * leaking Android-specific types.
+ *
+ * @param drawable The drawable to convert into a painter.
+ * @return A compose Painter that can be passed directly to Image().
+ */
 @Composable
 fun rememberDrawablePainter(drawable: Drawable?): Painter {
     return remember(drawable) { drawable?.toBitmap()?.let { BitmapPainter(it.asImageBitmap()) } ?: ColorPainter(Color.Transparent) }
 }
 
+/**
+ * Extension function that retrieves the application icon for the package
+ * referenced by this intent.
+ *
+ * Behavior:
+ * - Extracts the package name from the intent.
+ * - Calls PackageManager.getApplicationIcon(packageName).
+ * - Returns null if the package cannot be resolved or the icon fails to load.
+ *
+ * NOTE:
+ * This method is used primarily in app selection UIs to render launcher icons.
+ *
+ * @receiver Intent whose package should be inspected.
+ * @param context Optional context (defaults to LocalContext).
+ * @return Drawable for the app's icon, or null on failure.
+ */
 @Composable
 fun Intent.getPackageIcon(context: Context = LocalContext.current): Drawable? {
     val pm = context.packageManager
@@ -243,6 +361,22 @@ fun Intent.getPackageIcon(context: Context = LocalContext.current): Drawable? {
     }
 }
 
+/**
+ * A simple overflow menu (three-dot menu) providing quick access to:
+ * - Settings
+ * - About dialog
+ * - Quit action
+ *
+ * This component is typically used in top-level surfaces where a compact
+ * navigation affordance is needed. The menu expands from an IconButton and
+ * collapses automatically after an item is selected.
+ *
+ * All behavior is delegated through callbacks to keep UI stateless.
+ *
+ * @param onSettingsClick Invoked when "Settings" is selected.
+ * @param onAboutClick Invoked when "About" is selected.
+ * @param onQuitClick Invoked when "Quit" is selected.
+ */
 @Composable
 fun HamburgerMenu(
     onSettingsClick: () -> Unit,
@@ -284,6 +418,48 @@ fun HamburgerMenu(
     }
 }
 
+/**
+ * High-level entrypoint into Mjolnir’s Settings UI. This overload directly
+ * accepts all configuration parameters used across the various settings
+ * sub-screens and forwards them to the internal navigation-driven version of
+ * SettingsScreen.
+ *
+ * This function does **not** create or hold a NavController itself. Instead,
+ * it immediately delegates to the second SettingsScreen overload, injecting
+ * `startDestination = "main"` and passing all other parameters unchanged.
+ *
+ * ## Responsibilities
+ * - Acts as the stable public-facing Settings entry from MainActivity.
+ * - Ensures consistent routing into the internal settings NavHost.
+ * - Bundles all state values and callbacks required by nested menus, including:
+ *   - Steam File Generator settings
+ *   - Theme selection
+ *   - Directory selection
+ *   - Developer mode toggle
+ *   - Home Launcher configuration (top/bottom apps, app filtering, dual-screen)
+ *
+ * @param currentPath The ROM directory currently configured for Steam FG.
+ * @param currentTheme The active application theme.
+ * @param onThemeChange Callback invoked when the user selects a new theme.
+ * @param onChangeDirectory Triggers a directory picker for ROM location.
+ * @param onClose Called when the user exits settings.
+ * @param confirmDelete Whether to show delete-confirmation dialogs.
+ * @param onConfirmDeleteChange Updates the confirm-delete preference.
+ * @param autoCreateFile Whether Steam FG auto-creates files on search success.
+ * @param onAutoCreateFileChange Callback invoked when this toggle changes.
+ * @param devMode Whether developer mode is enabled.
+ * @param onDevModeChange Callback to update developer mode.
+ * @param topApp The package name assigned to the Top screen launcher slot.
+ * @param onTopAppChange Callback to update the Top screen launcher slot.
+ * @param bottomApp The package name assigned to the Bottom screen launcher slot.
+ * @param onBottomAppChange Callback to update the Bottom screen launcher slot.
+ * @param showAllApps Toggles between showing all launchable apps or only launchers.
+ * @param onShowAllAppsChange Callback invoked when the app filter changes.
+ * @param onSetDefaultHome Triggers the system dialog for choosing the default Home app.
+ * @param onLaunchDualScreen Callback invoked for testing dual-screen launch.
+ * @param mainScreen The screen considered “primary” after a dual-screen launch.
+ * @param onMainScreenChange Callback invoked when mainScreen is updated.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
@@ -335,6 +511,50 @@ fun SettingsScreen(
     )
 }
 
+/**
+ * Core Settings implementation backed by an internal [NavController] and
+ * [NavHost]. This version creates its own navigation controller and contains
+ * the complete routing logic for all settings sub-screens.
+ *
+ * ## Responsibilities
+ * - Hosts all settings UI within a single navigation graph.
+ * - Handles back-press behavior: pops navigation if possible, otherwise calls
+ *   `onClose()`.
+ * - Passes all configuration state and callbacks to each destination screen.
+ *
+ * ## Routes Provided
+ * - "main" → MainSettingsScreen
+ * - "tool_settings" → Steam File Generator configuration
+ * - "appearance" → Theme selection
+ * - "home_launcher" → Dual-screen launcher configuration
+ * - "app_blacklist" → App blacklist editor
+ * - "developer_mode" → Developer settings
+ * - "about" → About dialog
+ * - "diagnostics_summary" → Diagnostics summary/export screen
+ *
+ * @param startDestination Navigation start route (usually "main").
+ * @param currentPath Current ROM directory for Steam FG.
+ * @param currentTheme The active app theme.
+ * @param onThemeChange Callback invoked when theme is changed.
+ * @param onChangeDirectory Triggers ROM directory picker.
+ * @param onClose Called when exiting the entire settings UI.
+ * @param confirmDelete Whether to show delete confirmation dialogs.
+ * @param onConfirmDeleteChange Updates confirm-delete preference.
+ * @param autoCreateFile Whether Steam FG auto-creates files on search success.
+ * @param onAutoCreateFileChange Updates auto-create preference.
+ * @param devMode Whether developer mode is enabled.
+ * @param onDevModeChange Updates developer mode flag.
+ * @param topApp Package name for the Top launcher slot.
+ * @param onTopAppChange Updates the Top launcher slot.
+ * @param bottomApp Package name for the Bottom launcher slot.
+ * @param onBottomAppChange Updates the Bottom launcher slot.
+ * @param showAllApps Toggle to switch between all apps and launcher-only apps.
+ * @param onShowAllAppsChange Updates show-all-apps preference.
+ * @param onSetDefaultHome Launches system “Set default Home” screen.
+ * @param onLaunchDualScreen Triggers optional dual-screen test launch.
+ * @param mainScreen Which display is primary after launch.
+ * @param onMainScreenChange Callback to update mainScreen.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
@@ -371,6 +591,33 @@ fun SettingsScreen(
         }
     }
 
+    /**
+     * Internal navigation graph defining all available settings routes.
+     *
+     * Each route corresponds to one of Mjolnir’s configuration screens. All of
+     * these destinations were historically contained in SharedUI.kt, but are
+     * structured here as independent composables within a single NavHost.
+     *
+     * Routes:
+     * - "main"               → MainSettingsScreen
+     * - "tool_settings"      → ToolSettingsScreen
+     * - "appearance"         → AppearanceSettingsScreen
+     * - "home_launcher"      → HomeLauncherSettingsMenu
+     * - "app_blacklist"      → BlacklistSettingsScreen
+     * - "developer_mode"     → DeveloperSettingsScreen
+     * - "about"              → AboutDialog
+     * - "diagnostics_summary"→ DiagnosticsSummaryScreen
+     * - "home_setup"         → HomeSetup
+     *
+     * Behavior:
+     * - No animations are applied by default.
+     * - Back navigation is handled by parent NavController.
+     * - Each screen is responsible for managing its own state and side effects.
+     *
+     * Lifecycle Notes:
+     * - Because the settings system is large and stateful, each screen should
+     *   avoid heavy recomposition and rely on remembered state where needed.
+     */
     NavHost(navController = navController, startDestination = startDestination) {
         composable("main") {
             MainSettingsScreen(navController = navController, onClose = onClose)
@@ -419,6 +666,18 @@ fun SettingsScreen(
     }
 }
 
+/**
+ * The top-level settings landing page. Displays the primary categories of
+ * configuration using a vertical list.
+ *
+ * Behavior:
+ * - Provides large, touch-friendly entry points into deeper settings menus.
+ * - Navigates using the supplied [NavController].
+ * - Allows exiting the settings UI entirely via `onClose`.
+ *
+ * @param navController Controller used to navigate to sub-screens.
+ * @param onClose Invoked when the user presses the toolbar back button.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun MainSettingsScreen(navController: NavController, onClose: () -> Unit) {
@@ -488,6 +747,26 @@ private fun MainSettingsScreen(navController: NavController, onClose: () -> Unit
     }
 }
 
+/**
+ * Reusable list item representing a clickable entry within the settings menu.
+ *
+ * Behavior:
+ * - Entire row is tappable and triggers the provided callback.
+ * - Displays a title and optional subtitle/description.
+ * - Automatically handles padding, spacing, and ripple behavior.
+ *
+ * Intended Use:
+ * - Top-level navigation entries inside MainSettingsScreen.
+ * - Mid-level entries inside HomeLauncherSettingsMenu or other screens.
+ *
+ * Design Notes:
+ * - Should remain visually simple so it can appear in multiple settings
+ *   contexts without conflicting with other UI elements.
+ *
+ * @param title Main label for the row.
+ * @param description Optional smaller text describing the item.
+ * @param onClick Invoked when the row is tapped.
+ */
 @Composable
 fun SettingsItem(icon: ImageVector, title: String, subtitle: String, onClick: () -> Unit) {
     Row(
@@ -505,6 +784,28 @@ fun SettingsItem(icon: ImageVector, title: String, subtitle: String, onClick: ()
     }
 }
 
+/**
+ * Settings screen for configuring the Steam File Generator (Steam FG).
+ *
+ * ## Responsibilities
+ * - Toggle: confirmDelete — whether to require a dialog before deleting files.
+ * - Toggle: autoCreateFile — automatically generate the `.steam` file when a
+ *   single successful search result is returned.
+ * - Displays the currently selected ROM directory.
+ * - Allows the user to choose a new ROM directory.
+ *
+ * ## Behavior
+ * - Reads and writes preferences directly via supplied callbacks.
+ * - Navigates back using the provided NavController.
+ *
+ * @param navController For back navigation.
+ * @param confirmDelete Whether delete confirmation dialogs are enabled.
+ * @param onConfirmDeleteChange Updates the confirm-delete preference.
+ * @param autoCreateFile Whether auto-creation of `.steam` files is enabled.
+ * @param onAutoCreateFileChange Updates the auto-create preference.
+ * @param romsDirectory The currently configured ROM directory path.
+ * @param onChangeDirectory Callback to open a directory picker.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ToolSettingsScreen(
@@ -580,6 +881,15 @@ private fun SystemSettingsScreen(navController: NavController) {
     // This can be a placeholder or contain system-wide settings in the future
 }
 
+/**
+ * Appearance settings menu, allowing the user to switch between Light, Dark,
+ * and System themes.
+ *
+ * @param navController Used for back navigation.
+ * @param currentTheme The currently active theme selection.
+ * @param onThemeChange Called when the user selects a new theme.
+ */
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AppearanceSettingsScreen(
@@ -630,6 +940,20 @@ private fun AppearanceSettingsScreen(
     }
 }
 
+/**
+ * Settings screen for managing the App Blacklist used by the Home Launcher.
+ *
+ * ## Responsibilities
+ * - Displays all currently blacklisted apps.
+ * - Allows removing apps from the blacklist.
+ * - Opens a dialog to add new apps to the blacklist.
+ *
+ * ## Behavior
+ * - Loads initial blacklist from SharedPreferences.
+ * - Updates SharedPreferences immediately when modifications occur.
+ *
+ * @param navController For back navigation.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun BlacklistSettingsScreen(navController: NavController) {
@@ -732,6 +1056,14 @@ private fun BlacklistSettingsScreen(navController: NavController) {
     }
 }
 
+/**
+ * Dialog listing all apps not currently blacklisted and allowing the user to
+ * add any one of them to the blacklist.
+ *
+ * @param allApps List of all non-blacklisted apps (as AppInfo instances).
+ * @param onDismiss Called when the dialog is closed.
+ * @param onAppSelected Callback invoked with the selected package name.
+ */
 @Composable
 private fun AddAppToBlacklistDialog(
     allApps: List<AppInfo>,
@@ -772,11 +1104,41 @@ private fun AddAppToBlacklistDialog(
 
 private const val TAG = "MjolnirHomeLauncher"
 
+/**
+ * Lightweight model representing an app selectable in the dual-screen launcher.
+ *
+ * Fields:
+ * - `label`        → Resolved app label (already localized).
+ * - `packageName`  → Package name used as stable identifier.
+ * - `launchIntent` → Intent used to start the application.
+ *
+ * Notes:
+ * - This is separate from AppInfo to decouple UI-level launcher metadata from
+ *   the raw query helper format.
+ */
 data class LauncherApp(
     val label: String,
     val packageName: String,
     val launchIntent: Intent
 )
+
+/**
+ * Configuration screen for customizing Mjolnir’s dual-screen launcher:
+ * top/bottom app assignment, gestures, double-tap delay, diagnostics, and
+ * focus-lock workaround.
+ *
+ * @param navController For back navigation.
+ * @param topApp Package name assigned to the Top screen slot.
+ * @param onTopAppChange Callback invoked when Top slot app changes.
+ * @param bottomApp Package name assigned to the Bottom screen slot.
+ * @param onBottomAppChange Callback invoked when Bottom slot app changes.
+ * @param showAllApps Whether to show all apps or only launcher apps.
+ * @param onShowAllAppsChange Callback invoked when the filter changes.
+ * @param onSetDefaultHome Opens the system default-home app chooser.
+ * @param onLaunchDualScreen Required callback used for test dual-screen launch.
+ * @param mainScreen Which screen should be primary after launch.
+ * @param onMainScreenChange Callback invoked when mainScreen changes.
+ */
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -1634,6 +1996,14 @@ private fun HomeLauncherSettingsMenu(
     }
 }
 
+/**
+ * Developer-mode settings screen containing advanced toggles intended only
+ * for debugging or internal diagnostics.
+ *
+ * @param navController For back navigation.
+ * @param devMode Whether developer mode is active.
+ * @param onDevModeChange Callback to update developer mode.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun DeveloperSettingsScreen(
@@ -1675,6 +2045,22 @@ private fun DeveloperSettingsScreen(
     }
 }
 
+/**
+ * Modal dialog presenting basic information about the Mjolnir application,
+ * including its version number and a link to the project's GitHub page.
+ *
+ * Behavior:
+ * - Appears as an AlertDialog with title, body text, and confirm button.
+ * - GitHub URL is tappable and opens in a browser using ACTION_VIEW.
+ * - Dialog closes when the user presses the confirm button.
+ *
+ * Use Cases:
+ * - Accessed from the MainSettingsScreen via navigation.
+ * - Provides transparency about the app version and open-source availability.
+ *
+ * @param onDismissRequest Callback invoked when the dialog is dismissed,
+ *                         either via outside tap or confirm button.
+ */
 @Composable
 fun AboutDialog(onDismiss: () -> Unit) {
     val context = LocalContext.current
@@ -1715,6 +2101,29 @@ fun AboutDialog(onDismiss: () -> Unit) {
     )
 }
 
+/**
+ * Handles logic for assigning an app to either the Top or Bottom launcher slot.
+ *
+ * ## Behavior
+ * - When selecting for TOP:
+ *   - If selected app matches current bottom app, the two apps are swapped.
+ *   - Otherwise, the selected app becomes the new topApp.
+ *
+ * - When selecting for BOTTOM:
+ *   - If selected app matches current top app, the two apps are swapped.
+ *   - Otherwise, the selected app becomes bottomApp.
+ *
+ * ## Why Swapping?
+ * Prevents selecting the same package for both slots while preserving the user’s
+ * previous assignment. This avoids silent overwrites and maintains consistency.
+ *
+ * @param selectedAppPackage The package the user selected.
+ * @param isForTopSlot Whether this selection targets the top slot.
+ * @param currentTopApp Existing top slot package.
+ * @param currentBottomApp Existing bottom slot package.
+ * @param onTopAppChange Callback invoked if top slot is changed.
+ * @param onBottomAppChange Callback invoked if bottom slot is changed.
+ */
 private fun handleAppSelection(
     selectedAppPackage: String,
     isForTopSlot: Boolean,
@@ -1740,6 +2149,19 @@ private fun handleAppSelection(
     }
 }
 
+/**
+ * Retrieves a list of installed applications suitable for the launcher picker.
+ *
+ * **Logic:**
+ * - Uses [AppQueryHelper] to fetch apps.
+ * - If `showAll` is true: Returns all launchable apps (canonical list).
+ * - If `showAll` is false: Returns only apps with `CATEGORY_HOME` (launchers).
+ * - **Injects:** A special `<Nothing>` option at the top of the list to allow clearing a slot.
+ *
+ * @param context Context for PackageManager access.
+ * @param showAll Filter toggle state.
+ * @return A sorted list of [LauncherApp] objects.
+ */
 fun getLaunchableApps(context: Context, showAll: Boolean): List<LauncherApp> {
     val queryHelper = AppQueryHelper(context)
     val appInfoList = if (showAll) {
@@ -1784,6 +2206,30 @@ fun getLaunchableApps(context: Context, showAll: Boolean): List<LauncherApp> {
 fun launchOnDualScreens(context: Context, topIntent: Intent, bottomIntent: Intent) {
     DualScreenLauncher.launchOnDualScreens(context, topIntent, bottomIntent, MainScreen.TOP)
 }
+
+/**
+ * Guided onboarding screen shown when Mjolnir detects that required permissions
+ * or setup steps are incomplete.
+ *
+ * ## Steps Included
+ * 1. **Notification Permission** — required for the persistent service.
+ * 2. **Accessibility Service** — required for intercepting Home button events.
+ * 3. **Home Interception Toggle** — enables special Home-launch behaviors.
+ *
+ * ## Additional Tools
+ * - “Test Notification” button to verify persistent-notification behavior.
+ * - “Close” button for aborting setup flow.
+ *
+ * ## Behavior
+ * - Stateless; all actions are emitted upward through provided callbacks.
+ * - Scrollable to accommodate all steps on small screens.
+ *
+ * @param onGrantPermissionClick Opens the Notification Permission screen.
+ * @param onEnableAccessibilityClick Opens Accessibility Service settings.
+ * @param onEnableHomeInterceptionClick Opens app-specific interception settings.
+ * @param onTestNotificationClick Fires a test notification for verification.
+ * @param onClose Closes the setup flow.
+ */
 
 @Composable
 fun HomeSetup(
@@ -1864,6 +2310,21 @@ fun HomeSetup(
     }
 }
 
+/**
+ * Initial setup UI for the Steam File Generator workflow.
+ *
+ * ## Responsibilities
+ * - Requests the user’s Steam ROMs directory.
+ * - Provides a “Skip” option to bypass setup temporarily.
+ *
+ * ## Behavior
+ * - Displays simple explanatory text to inform the user about why the directory
+ *   is needed (Steam file generation output path).
+ *
+ * @param onPickDirectory Triggers directory-picker intent.
+ * @param onClose Closes setup flow without selecting a directory.
+ * @param modifier Optional modifier for layout customization.
+ */
 @Composable
 fun SetupScreen(onPickDirectory: () -> Unit, onClose: () -> Unit, modifier: Modifier = Modifier) {
     Surface(modifier = modifier.fillMaxSize()) {
@@ -1884,6 +2345,25 @@ fun SetupScreen(onPickDirectory: () -> Unit, onClose: () -> Unit, modifier: Modi
     }
 }
 
+/**
+ * Modal dialog shown when the user attempts to generate a `.steam` file but an
+ * existing file with the same name already exists and contains a **different**
+ * AppID.
+ *
+ * ## Responsibilities
+ * - Displays both old and new AppID values.
+ * - Ensures the user explicitly acknowledges overwriting mismatched game data.
+ * - Allows user to cancel or confirm the overwrite operation.
+ *
+ * ## Behavior
+ * - Uses provided [OverwriteInfo] to populate dialog fields.
+ * - Confirm flows upward via onConfirm().
+ * - Cancel/dismiss flows via onDismiss().
+ *
+ * @param overwriteInfo Metadata describing old vs new AppID state.
+ * @param onDismiss Dismiss callback.
+ * @param onConfirm Confirms overwriting the existing mismatched file.
+ */
 @Composable
 fun OverwriteConfirmationDialog(
     overwriteInfo: OverwriteInfo,
@@ -1905,6 +2385,23 @@ fun OverwriteConfirmationDialog(
         confirmButton = { Button(onClick = onConfirm) { Text("Overwrite") } }
     )
 }
+
+/**
+ * Simplified UI for manually typing a Steam AppID when automatic search is not
+ * desired or the user already knows the AppID.
+ *
+ * ## Responsibilities
+ * - Collects numeric AppID input.
+ * - Emits onSearch(appIdString) when the search icon or IME search action is
+ *   pressed.
+ *
+ * ## Behavior
+ * - Filters input to digits only.
+ * - Stores state through rememberSaveable for rotation/process safety.
+ *
+ * @param onSearch Invoked with the raw numeric string when the user submits.
+ * @param modifier External layout modifier.
+ */
 
 @Composable
 fun ManualInputUi(onSearch: (String) -> Unit, modifier: Modifier = Modifier) {
@@ -1930,6 +2427,21 @@ fun ManualInputUi(onSearch: (String) -> Unit, modifier: Modifier = Modifier) {
     }
 }
 
+/**
+ * Helper function to retrieve the application icon for the given package name.
+ *
+ * ## Behavior
+ * - Uses PackageManager.getApplicationIcon().
+ * - Returns null if the package does not exist or icon loading fails.
+ *
+ * Used in:
+ * - Blacklist UI
+ * - Dropdown selectors
+ *
+ * @param context Context for package lookup.
+ * @param packageName Target package.
+ * @return Drawable icon or null on failure.
+ */
 fun getAppIcon(context: Context, packageName: String): Drawable? {
     return try {
         context.packageManager.getApplicationIcon(packageName)
@@ -1937,6 +2449,25 @@ fun getAppIcon(context: Context, packageName: String): Drawable? {
         null
     }
 }
+
+/**
+ * Search interface for Steam metadata lookups with support for generating
+ * `.steam` shortcut files after a successful query.
+ *
+ * ## Visual Behavior
+ * - When UiState.Success: displays blurred header image background from metadata.
+ * - Otherwise: shows instructional text, a loading indicator, or error message.
+ *
+ * ## Responsibilities
+ * - Displays AppID resolution results via UiState.
+ * - Calls onCreateFile() when the user chooses to create the shortcut file.
+ * - Shows success / error messages returned by the file creation stage.
+ *
+ * @param uiState The current Steam metadata query state.
+ * @param fileCreationResult Optional result string from file creation step.
+ * @param onCreateFile Called when user confirms saving the .steam file.
+ * @param modifier Optional layout modifier.
+ */
 
 @Composable
 fun SearchUi(
@@ -1996,6 +2527,37 @@ fun SearchUi(
         }
     }
 }
+
+/**
+ * Full diagnostics dashboard providing inspection and export controls for
+ * Mjolnir’s internal logging system.
+ *
+ * ## Data Shown
+ * - Diagnostics Enabled (Boolean)
+ * - Log File Exists
+ * - Current log size (bytes)
+ * - Configured max size (bytes)
+ * - Approximate entry count
+ * - Last modified timestamp
+ * - Absolute log file path
+ *
+ * All values come from [DiagnosticsSummary] and are refreshed whenever
+ * refreshTrigger changes.
+ *
+ * ## Actions Provided
+ * ### 1. **View Raw Log**
+ * Opens the log file via an ACTION_VIEW intent.
+ *
+ * ### 2. **Export with Summary**
+ * Creates an export bundle including metadata and log content.
+ *
+ * ### 3. **Delete Active Log**
+ * Clears the file completely.
+ *
+ * Each action gracefully handles FileProvider mappings and error states.
+ *
+ * @param navController For back navigation.
+ */
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -2140,6 +2702,18 @@ private fun DiagnosticsSummaryScreen(navController: NavController) {
         }
     }
 }
+
+/**
+ * Utility UI row for presenting a labeled value pair in the diagnostics
+ * summary. Used for cleanly displaying key/value system information.
+ *
+ * ## Layout
+ * - `label` displayed left-aligned
+ * - `value` displayed right-aligned in bold
+ *
+ * @param label Text describing the metric.
+ * @param value Metric value formatted as string.
+ */
 
 @Composable
 private fun SummaryRow(label: String, value: String) {

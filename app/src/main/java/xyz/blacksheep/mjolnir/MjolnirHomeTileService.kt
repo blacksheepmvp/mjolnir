@@ -13,6 +13,17 @@ import android.view.accessibility.AccessibilityManager
 import androidx.core.content.edit
 import xyz.blacksheep.mjolnir.utils.DiagnosticsLogger
 
+/**
+ * A Quick Settings Tile that allows the user to toggle the Home Button Interception feature on/off.
+ *
+ * **Behavior:**
+ * - **If Accessibility Service is OFF:** Tapping the tile takes the user to Android Accessibility Settings.
+ * - **If Accessibility Service is ON:** Tapping the tile toggles the internal `KEY_HOME_INTERCEPTION_ACTIVE` preference.
+ *
+ * **State Indication:**
+ * - **Active (Lit up):** Service is running AND interception is enabled.
+ * - **Inactive (Dim):** Service is running BUT interception is paused OR service is disabled.
+ */
 class MjolnirHomeTileService : TileService(), SharedPreferences.OnSharedPreferenceChangeListener {
 
     private lateinit var prefs: SharedPreferences
@@ -83,6 +94,9 @@ class MjolnirHomeTileService : TileService(), SharedPreferences.OnSharedPreferen
     }
 
     companion object {
+        /**
+         * Helper to check if Mjolnir's Accessibility Service is currently enabled in system settings.
+         */
         fun isAccessibilityServiceEnabled(context: Context): Boolean {
             val am = context.getSystemService(Context.ACCESSIBILITY_SERVICE) as AccessibilityManager
             val enabledServices = am.getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_ALL_MASK)

@@ -2,6 +2,13 @@ package xyz.blacksheep.mjolnir.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
+/**
+ * Color definitions for the Mjolnir app theme.
+ *
+ * These are primitive color values that should be referenced by [Theme.kt] to build
+ * the semantic ColorScheme. Do not use these directly in UI composables unless absolutely necessary;
+ * prefer `MaterialTheme.colorScheme.primary`, etc.
+ */
 val Purple80 = Color(0xFFD0BCFF)
 val PurpleGrey80 = Color(0xFFCCC2DC)
 val Pink80 = Color(0xFFEFB8C8)
