@@ -2,7 +2,10 @@ package xyz.blacksheep.mjolnir
 
 import android.Manifest
 import android.accessibilityservice.AccessibilityService
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.SharedPreferences
 import android.os.Build
 import android.os.Handler
@@ -47,11 +50,12 @@ class HomeKeyInterceptorService : AccessibilityService(), SharedPreferences.OnSh
 
     companion object {
         private const val TAG = "HomeKeyInterceptorService"
+        var instance: HomeKeyInterceptorService? = null
+        const val ACTION_REQ_COLLAPSE_SHADE = "xyz.blacksheep.mjolnir.ACTION_REQ_COLLAPSE_SHADE"
     }
 
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private lateinit var prefs: SharedPreferences
-    private var instance: HomeKeyInterceptorService? = null
     private lateinit var actionLauncher: HomeActionLauncher
 
     // Gesture detection state
@@ -67,6 +71,27 @@ class HomeKeyInterceptorService : AccessibilityService(), SharedPreferences.OnSh
     private val ENABLE_GESTURE_TOAST = false
     private val ENABLE_GESTURE_HAPTIC = true
 
+    // Receiver for cross-process requests (e.g. from KeepAliveService)
+    private val collapseShadeReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == ACTION_REQ_COLLAPSE_SHADE) {
+                DiagnosticsLogger.logEvent("Gesture", "SHADE_COLLAPSE_REQ_RECEIVED", context = this@HomeKeyInterceptorService)
+                if (Build.VERSION.SDK_INT >= 31) {
+                    val success = performGlobalAction(AccessibilityService.GLOBAL_ACTION_DISMISS_NOTIFICATION_SHADE)
+                    DiagnosticsLogger.logEvent("Gesture", "SHADE_COLLAPSE_PERFORMED", "success=$success method=global_action", this@HomeKeyInterceptorService)
+                } else {
+                    try {
+                        @Suppress("DEPRECATION")
+                        sendBroadcast(Intent(Intent.ACTION_CLOSE_SYSTEM_DIALOGS))
+                        DiagnosticsLogger.logEvent("Gesture", "SHADE_COLLAPSE_PERFORMED", "method=broadcast_legacy", this@HomeKeyInterceptorService)
+                    } catch (e: Exception) {
+                        DiagnosticsLogger.logEvent("Gesture", "SHADE_COLLAPSE_FAILED", "reason=${e.message}", this@HomeKeyInterceptorService)
+                    }
+                }
+            }
+        }
+    }
+
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -76,6 +101,14 @@ class HomeKeyInterceptorService : AccessibilityService(), SharedPreferences.OnSh
         prefs.registerOnSharedPreferenceChangeListener(this)
         actionLauncher = HomeActionLauncher(this)
         updateGestureConfig()
+
+        // Register receiver
+        val filter = IntentFilter(ACTION_REQ_COLLAPSE_SHADE)
+        if (Build.VERSION.SDK_INT >= 33) {
+            registerReceiver(collapseShadeReceiver, filter, RECEIVER_NOT_EXPORTED)
+        } else {
+            registerReceiver(collapseShadeReceiver, filter)
+        }
 
         // Start the foreground KeepAliveService to keep this process alive.
         Handler(Looper.getMainLooper()).postDelayed({
@@ -336,6 +369,9 @@ class HomeKeyInterceptorService : AccessibilityService(), SharedPreferences.OnSh
 
     override fun onUnbind(intent: Intent?): Boolean {
         DiagnosticsLogger.logEvent("Service", "ACCESSIBILITY_UNBOUND", context = this)
+        try {
+            unregisterReceiver(collapseShadeReceiver)
+        } catch (e: Exception) { /* ignore */ }
         instance = null
         stopKeepAliveService()
         resetGestureState()
@@ -345,6 +381,9 @@ class HomeKeyInterceptorService : AccessibilityService(), SharedPreferences.OnSh
     override fun onDestroy() {
         super.onDestroy()
         DiagnosticsLogger.logEvent("Service", "ACCESSIBILITY_DESTROYED", context = this)
+        try {
+            unregisterReceiver(collapseShadeReceiver)
+        } catch (e: Exception) { /* ignore */ }
         stopKeepAliveService()
         prefs.unregisterOnSharedPreferenceChangeListener(this)
         serviceScope.cancel()

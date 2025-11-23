@@ -8,6 +8,9 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
 
     <queries>
         <intent>
@@ -72,6 +75,11 @@
             android:name=".ManualFileGenActivity"
             android:exported="false"
             android:theme="@style/Theme.Mjolnir" />
+            
+        <activity
+            android:name=".ScreenshotPermissionActivity"
+            android:exported="false"
+            android:theme="@style/Theme.Mjolnir.Transparent" />
 
         <service
             android:name=".MjolnirHomeTileService"
@@ -115,6 +123,12 @@
             android:process=":keepalive"
             android:stopWithTask="false"
             android:foregroundServiceType="connectedDevice"
+            tools:ignore="ForegroundServicePermission" />
+            
+        <service
+            android:name=".services.DualScreenshotService"
+            android:exported="false"
+            android:foregroundServiceType="mediaProjection"
             tools:ignore="ForegroundServicePermission" />
 
     </application>

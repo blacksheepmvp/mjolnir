@@ -10,10 +10,12 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
+import android.net.Uri
 import android.os.Build
 import android.os.IBinder
 import android.os.SystemClock
 import android.view.accessibility.AccessibilityManager
+import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import xyz.blacksheep.mjolnir.HomeKeyInterceptorService
@@ -26,6 +28,7 @@ import xyz.blacksheep.mjolnir.PREFS_NAME
 import xyz.blacksheep.mjolnir.R
 import xyz.blacksheep.mjolnir.utils.DiagnosticsConfig
 import xyz.blacksheep.mjolnir.utils.DiagnosticsLogger
+import xyz.blacksheep.mjolnir.utils.DualScreenshotManager
 
 /**
  * A foreground service responsible for keeping the Mjolnir application process alive.
@@ -41,6 +44,8 @@ import xyz.blacksheep.mjolnir.utils.DiagnosticsLogger
  * - Updates the notification text dynamically based on app state (e.g., "Home button capture ENABLED").
  * - Uses [AlarmManager] to auto-restart itself if the task is swiped away (see [onTaskRemoved]).
  * - Listens to SharedPreferences to update the notification UI immediately when settings change.
+ * - Provides an action button to trigger Dual Screenshot (v0.2.5b).
+ * - Handles deletion of screenshots (v0.2.5b).
  */
 class KeepAliveService : Service(), SharedPreferences.OnSharedPreferenceChangeListener {
 
@@ -56,6 +61,39 @@ class KeepAliveService : Service(), SharedPreferences.OnSharedPreferenceChangeLi
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        val action = intent?.action
+        
+        // Handle Dual Screenshot Action
+        if (action == ACTION_DUAL_SCREENSHOT) {
+            DiagnosticsLogger.logEvent("Service", "ACTION_DUAL_SCREENSHOT_RECEIVED", context = this)
+            DualScreenshotManager.start(this)
+            // Re-post the notification to ensure it remains consistent
+            startForegroundInternal()
+            return START_STICKY
+        }
+
+        // Handle Delete Screenshot Action
+        if (action == ACTION_DELETE_SCREENSHOT) {
+            val uri = intent?.data
+            val notificationId = intent?.getIntExtra(EXTRA_NOTIFICATION_ID, -1) ?: -1
+            
+            if (uri != null) {
+                try {
+                    contentResolver.delete(uri, null, null)
+                    if (notificationId != -1) {
+                        getSystemService(NotificationManager::class.java).cancel(notificationId)
+                    }
+                    Toast.makeText(this, "Screenshot deleted", Toast.LENGTH_SHORT).show()
+                    DiagnosticsLogger.logEvent("Service", "SCREENSHOT_DELETED", "uri=$uri", this)
+                } catch (e: Exception) {
+                    DiagnosticsLogger.logException("Service", e, this)
+                    Toast.makeText(this, "Failed to delete screenshot", Toast.LENGTH_SHORT).show()
+                }
+            }
+            // We don't need to update the foreground notification for this action
+            return START_STICKY
+        }
+
         // Service does no work; it only exists to keep the process alive.
         // START_STICKY ensures it restarts if the system kills it.
         // We also update notification here in case service was restarted or state changed
@@ -133,6 +171,14 @@ class KeepAliveService : Service(), SharedPreferences.OnSharedPreferenceChangeLi
                     PendingIntent.FLAG_IMMUTABLE)
             }
 
+        // Dual Screenshot Action Intent
+        val dssIntent = Intent(this, KeepAliveService::class.java).apply {
+            action = ACTION_DUAL_SCREENSHOT
+        }
+        val dssPendingIntent = PendingIntent.getService(
+            this, 2, dssIntent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
         // Gather state
         val tileEnabled = prefs.getBoolean(KEY_HOME_INTERCEPTION_ACTIVE, false)
         val serviceRunning = isAccessibilityServiceEnabled(this)
@@ -167,6 +213,7 @@ class KeepAliveService : Service(), SharedPreferences.OnSharedPreferenceChangeLi
             .setOngoing(true)
             .setCategory(Notification.CATEGORY_SERVICE)
             .setPriority(NotificationCompat.PRIORITY_LOW) // legacy devices
+            .addAction(R.drawable.ic_home, "Dual Screenshot", dssPendingIntent)
             .setSilent(true)
             .build()
 
@@ -178,9 +225,6 @@ class KeepAliveService : Service(), SharedPreferences.OnSharedPreferenceChangeLi
                 0 // No special foreground type; we don't use location/camera/etc.
             )
             // Only log if this is a fresh start or significant update to avoid spamming logs on every pref change if we called this more often
-            // But here we call it on pref change so it might be frequent.
-            // The spec says: "Notification shown" logging is required.
-            // We will stick to the existing requirement.
             DiagnosticsLogger.logEvent("Service", "KEEPALIVE_NOTIFICATION_SHOWN", "title=\"$contentTitle\"", this)
         } catch (e: Exception) {
             DiagnosticsLogger.logEvent("Error", "KEEPALIVE_NOTIFICATION_FAILED", "message=${e.message}", this)
@@ -217,5 +261,8 @@ class KeepAliveService : Service(), SharedPreferences.OnSharedPreferenceChangeLi
 
     companion object {
         private const val NOTIFICATION_ID = 1
+        const val ACTION_DUAL_SCREENSHOT = "xyz.blacksheep.mjolnir.ACTION_DUAL_SCREENSHOT"
+        const val ACTION_DELETE_SCREENSHOT = "xyz.blacksheep.mjolnir.ACTION_DELETE_SCREENSHOT"
+        const val EXTRA_NOTIFICATION_ID = "extra_notification_id"
     }
 }

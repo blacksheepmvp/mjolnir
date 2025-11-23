@@ -34,3 +34,6 @@ const val KEY_AUTO_BOOT_BOTH_HOME = "autoBootBothHomeOnServiceStart"
 const val KEY_APP_BLACKLIST = "APP_BLACKLIST"
 
 const val KEY_ENABLE_FOCUS_LOCK_WORKAROUND = "enable_focus_lock_workaround"
+
+const val KEY_DSS_SHARE_AFTER_CAPTURE = "dss_share_after_capture"
+const val KEY_DSS_PROJECTION_DATA = "dss_projection_data"

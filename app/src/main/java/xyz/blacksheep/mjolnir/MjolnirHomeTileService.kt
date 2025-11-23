@@ -12,6 +12,7 @@ import android.service.quicksettings.TileService
 import android.view.accessibility.AccessibilityManager
 import androidx.core.content.edit
 import xyz.blacksheep.mjolnir.utils.DiagnosticsLogger
+import xyz.blacksheep.mjolnir.utils.DualScreenshotManager
 
 /**
  * A Quick Settings Tile that allows the user to toggle the Home Button Interception feature on/off.
@@ -23,6 +24,10 @@ import xyz.blacksheep.mjolnir.utils.DiagnosticsLogger
  * **State Indication:**
  * - **Active (Lit up):** Service is running AND interception is enabled.
  * - **Inactive (Dim):** Service is running BUT interception is paused OR service is disabled.
+ *
+ * **Note for 0.2.5b:**
+ * A separate `DualScreenshotTileService` is planned for DSS triggering if needed, but the spec
+ * focuses on the notification action. This tile remains focused on Home Interception.
  */
 class MjolnirHomeTileService : TileService(), SharedPreferences.OnSharedPreferenceChangeListener {
 

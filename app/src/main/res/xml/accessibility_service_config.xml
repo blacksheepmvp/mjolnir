@@ -2,4 +2,5 @@
     android:accessibilityEventTypes="typeViewClicked|typeViewFocused"
     android:accessibilityFeedbackType="feedbackGeneric"
     android:accessibilityFlags="flagDefault|flagIncludeNotImportantViews|flagRequestFilterKeyEvents"
-    android:canRequestFilterKeyEvents="true" />
+    android:canRequestFilterKeyEvents="true"
+    android:canTakeScreenshot="true" />
