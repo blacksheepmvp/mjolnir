@@ -9,6 +9,7 @@ import android.content.SharedPreferences
 import android.provider.Settings
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
+import android.text.TextUtils
 import android.view.accessibility.AccessibilityManager
 import androidx.core.content.edit
 import xyz.blacksheep.mjolnir.utils.DiagnosticsLogger
@@ -103,13 +104,14 @@ class MjolnirHomeTileService : TileService(), SharedPreferences.OnSharedPreferen
          * Helper to check if Mjolnir's Accessibility Service is currently enabled in system settings.
          */
         fun isAccessibilityServiceEnabled(context: Context): Boolean {
-            val am = context.getSystemService(Context.ACCESSIBILITY_SERVICE) as AccessibilityManager
-            val enabledServices = am.getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_ALL_MASK)
             val expectedComponentName = ComponentName(context, HomeKeyInterceptorService::class.java)
-
-            for (service in enabledServices) {
-                val serviceComponentName = ComponentName(service.resolveInfo.serviceInfo.packageName, service.resolveInfo.serviceInfo.name)
-                if (serviceComponentName == expectedComponentName) {
+            val enabledServicesSetting = Settings.Secure.getString(context.contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: return false
+            val colonSplitter = TextUtils.SimpleStringSplitter(':')
+            colonSplitter.setString(enabledServicesSetting)
+            while (colonSplitter.hasNext()) {
+                val componentNameString = colonSplitter.next()
+                val enabledComponent = ComponentName.unflattenFromString(componentNameString)
+                if (enabledComponent != null && enabledComponent == expectedComponentName) {
                     return true
                 }
             }

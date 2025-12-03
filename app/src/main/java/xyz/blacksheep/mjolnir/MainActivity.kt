@@ -53,6 +53,7 @@ import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.core.view.WindowCompat
 import kotlinx.coroutines.launch
 import xyz.blacksheep.mjolnir.home.HomeActionLauncher
+import xyz.blacksheep.mjolnir.services.KeepAliveService
 import xyz.blacksheep.mjolnir.settings.AboutDialog
 import xyz.blacksheep.mjolnir.settings.AppTheme
 import xyz.blacksheep.mjolnir.settings.HomeSetup
@@ -246,6 +247,20 @@ class MainActivity : ComponentActivity() {
                                                 val newValue = !isInterceptionActive
                                                 prefs.edit { putBoolean(KEY_HOME_INTERCEPTION_ACTIVE, newValue) }
                                                 isInterceptionActive = newValue
+                                                
+                                                // Send explicit intent to update notification status immediately
+                                                try {
+                                                    val updateIntent = Intent(this@MainActivity, KeepAliveService::class.java).apply {
+                                                        action = KeepAliveService.ACTION_UPDATE_STATUS
+                                                    }
+                                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                                        startForegroundService(updateIntent)
+                                                    } else {
+                                                        startService(updateIntent)
+                                                    }
+                                                } catch (e: Exception) {
+                                                    DiagnosticsLogger.logEvent("Error", "FAILED_TO_SEND_UPDATE_STATUS", "msg=${e.message}", this@MainActivity)
+                                                }
                                             }
                                         }
                                     }) {
@@ -339,6 +354,20 @@ class MainActivity : ComponentActivity() {
                         onEnableHomeInterceptionClick = {
                             prefs.edit { putBoolean(KEY_HOME_INTERCEPTION_ACTIVE, true) }
                             isInterceptionActive = true
+                            
+                            // Update notification
+                            val updateIntent = Intent(this@MainActivity, KeepAliveService::class.java).apply {
+                                action = KeepAliveService.ACTION_UPDATE_STATUS
+                            }
+                            try {
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                    startForegroundService(updateIntent)
+                                } else {
+                                    startService(updateIntent)
+                                }
+                            } catch (e: Exception) {
+                                DiagnosticsLogger.logEvent("Error", "FAILED_TO_SEND_UPDATE_STATUS", "msg=${e.message}", this@MainActivity)
+                            }
                         },
                         onTestNotificationClick = { showTestNotification(this) },
                         onClose = { showHomeSetup = false }
@@ -395,6 +424,20 @@ class MainActivity : ComponentActivity() {
                             }
                             prefs.edit { putString(KEY_TOP_APP, newTopApp) }
                             topApp = newTopApp
+                            
+                            // Trigger Notification Update if both apps are now set (or at least one to clear 'not configured')
+                            val updateIntent = Intent(this@MainActivity, KeepAliveService::class.java).apply {
+                                action = KeepAliveService.ACTION_UPDATE_STATUS
+                            }
+                            try {
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                    startForegroundService(updateIntent)
+                                } else {
+                                    startService(updateIntent)
+                                }
+                            } catch (e: Exception) {
+                                DiagnosticsLogger.logEvent("Error", "FAILED_TO_SEND_UPDATE_STATUS", "msg=${e.message}", this@MainActivity)
+                            }
                         },
                         bottomApp = bottomApp,
                         onBottomAppChange = { newBottomApp ->
@@ -404,6 +447,20 @@ class MainActivity : ComponentActivity() {
                             }
                             prefs.edit { putString(KEY_BOTTOM_APP, newBottomApp) }
                             bottomApp = newBottomApp
+
+                            // Trigger Notification Update
+                            val updateIntent = Intent(this@MainActivity, KeepAliveService::class.java).apply {
+                                action = KeepAliveService.ACTION_UPDATE_STATUS
+                            }
+                            try {
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                    startForegroundService(updateIntent)
+                                } else {
+                                    startService(updateIntent)
+                                }
+                            } catch (e: Exception) {
+                                DiagnosticsLogger.logEvent("Error", "FAILED_TO_SEND_UPDATE_STATUS", "msg=${e.message}", this@MainActivity)
+                            }
                         },
                         showAllApps = showAllApps,
                         onShowAllAppsChange = { newShowAllApps ->

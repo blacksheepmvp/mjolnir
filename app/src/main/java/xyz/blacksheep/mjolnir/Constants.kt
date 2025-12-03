@@ -37,3 +37,19 @@ const val KEY_ENABLE_FOCUS_LOCK_WORKAROUND = "enable_focus_lock_workaround"
 
 const val KEY_DSS_SHARE_AFTER_CAPTURE = "dss_share_after_capture"
 const val KEY_DSS_PROJECTION_DATA = "dss_projection_data"
+
+/**
+ * Boolean preference key for enabling rootless auto-stitch DSS.
+ * If true, Mjolnir watches for system screenshots (Bottom) and triggers a Dual Shot.
+ */
+const val KEY_DSS_AUTO_STITCH = "dss_auto_stitch"
+
+/**
+ * Intent action for deleting the source (bottom) screenshot from the result notification.
+ */
+const val ACTION_DELETE_SOURCE = "xyz.blacksheep.mjolnir.ACTION_DELETE_SOURCE"
+
+/**
+ * Intent extra key for passing the source (bottom) screenshot URI to the service.
+ */
+const val EXTRA_SOURCE_URI = "xyz.blacksheep.mjolnir.EXTRA_SOURCE_URI"

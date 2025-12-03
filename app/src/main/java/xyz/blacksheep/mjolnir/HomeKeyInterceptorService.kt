@@ -111,9 +111,17 @@ class HomeKeyInterceptorService : AccessibilityService(), SharedPreferences.OnSh
         }
 
         // Start the foreground KeepAliveService to keep this process alive.
+        // Also explicitly tell it to update its status notification immediately.
         Handler(Looper.getMainLooper()).postDelayed({
-            val intent = Intent(this, KeepAliveService::class.java)
-            ContextCompat.startForegroundService(this, intent)
+            val intent = Intent(this, KeepAliveService::class.java).apply {
+                action = KeepAliveService.ACTION_UPDATE_STATUS
+            }
+            DiagnosticsLogger.logEvent("Service", "SENDING_UPDATE_STATUS_INTENT", context = this)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(intent)
+            } else {
+                startService(intent)
+            }
         }, 250)
 
         // Auto-run BOTH_HOME on boot if enabled
@@ -392,10 +400,21 @@ class HomeKeyInterceptorService : AccessibilityService(), SharedPreferences.OnSh
 
     private fun stopKeepAliveService() {
         try {
+            // We also send a status update to let it know we are dying (optional, but good practice)
+            // Actually, better to just let the service handle its own state if it stays alive.
+            // But if we want to kill it when accessibility dies:
             val intent = Intent(this, KeepAliveService::class.java)
             stopService(intent)
         } catch (e: Exception) {
             DiagnosticsLogger.logException("Service", e, this)
         }
+    }
+
+    /**
+     * Exposes GLOBAL_ACTION_BACK to be called from other services (e.g., DSS).
+     */
+    fun performBack(): Boolean {
+        DiagnosticsLogger.logEvent("Gesture", "PERFORM_BACK_REQUESTED", context = this)
+        return performGlobalAction(GLOBAL_ACTION_BACK)
     }
 }

@@ -246,6 +246,21 @@ Below is a structured overview of each major file, what it contains, and its rol
 
 ---
 
+# 9. Dual Screenshot Strategy (Advanced)
+
+### **Core Constraint:**
+
+* `MediaProjection` API is **banned** for this feature because the AYN Thor hardware mirrors display 0 when attempting to project display 1.
+
+### **Implementation:**
+
+* **Root (su):** Uses `screencap -d <id>` via shell.
+* **Shizuku:** Uses `Shizuku.newProcess("screencap ...")` via ADB shell.
+* **Feature Visibility:** The UI action ("Dual Screenshot") is hidden unless one of these capabilities is detected.
+* **Architecture:** Relies on `ShellInterface`, `AccessManager`, and `ScreenshotUtil` abstraction to isolate the capture method from the service logic.
+
+---
+
 # 🛑 Major Pitfalls to Avoid (Critical Observations)
 
 ### ❌ 1. Never modify SharedUI.kt blindly
@@ -267,6 +282,10 @@ Use `pm.getApplicationIcon(pkg)` to avoid white mask icons.
 ### ❌ 5. Never put blocking operations inside Composable functions
 
 App list queries must be cached and prewarmed.
+
+### ❌ 6. Never use MediaProjection for Secondary Displays on Thor
+
+It will result in a mirrored image of the primary display. Use Shell/Root capture instead.
 
 ---
 
@@ -361,6 +380,7 @@ The largest technical risks are:
 * unstable alpha ConstraintLayout versions
 * SharedUI over‑complexity
 * android manifest misconfiguration
+* **Hardware display mirroring** preventing standard screenshot APIs
 
 Any future AI working with this project should:
 
@@ -369,6 +389,7 @@ Any future AI working with this project should:
 * always check Constants.kt before modifying preference use
 * respect dual‑display launch constraints
 * treat prewarm behavior as essential
+* **Use Root/Shizuku for screenshots, never MediaProjection**
 
 ---
 

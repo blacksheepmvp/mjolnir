@@ -80,12 +80,39 @@
             android:name=".ScreenshotPermissionActivity"
             android:exported="false"
             android:theme="@style/Theme.Mjolnir.Transparent" />
+            
+        <activity
+            android:name=".ScreenshotActionActivity"
+            android:exported="false"
+            android:launchMode="singleInstance"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:theme="@style/Theme.Mjolnir.Transparent" />
+            
+        <activity
+            android:name=".DssPermissionActivity"
+            android:exported="false"
+            android:launchMode="singleInstance"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:theme="@style/Theme.Mjolnir.Transparent" />
 
         <service
             android:name=".MjolnirHomeTileService"
             android:exported="true"
             android:icon="@drawable/ic_home"
             android:label="@string/mjolnir_home_tile_label"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+        
+        <service
+            android:name=".DualScreenshotTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_home"
+            android:label="DualShot"
             android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
             <intent-filter>
                 <action android:name="android.service.quicksettings.action.QS_TILE" />
@@ -120,7 +147,6 @@
         <service
             android:name=".services.KeepAliveService"
             android:exported="false"
-            android:process=":keepalive"
             android:stopWithTask="false"
             android:foregroundServiceType="connectedDevice"
             tools:ignore="ForegroundServicePermission" />

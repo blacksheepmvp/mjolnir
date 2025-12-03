@@ -6,10 +6,10 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.ContentValues
-import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.net.Uri
 import android.os.Build
@@ -29,6 +29,8 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import xyz.blacksheep.mjolnir.EXTRA_SOURCE_URI
+import xyz.blacksheep.mjolnir.HomeKeyInterceptorService
 import xyz.blacksheep.mjolnir.R
 import xyz.blacksheep.mjolnir.utils.BitmapStitcher
 import xyz.blacksheep.mjolnir.utils.DiagnosticsLogger
@@ -65,9 +67,43 @@ class DualScreenshotService : Service() {
             )
         }
         
+        // Handle Update Notification Action
+        if (intent?.action == ACTION_UPDATE_NOTIFICATION) {
+            val notificationId = intent.getIntExtra(KeepAliveService.EXTRA_NOTIFICATION_ID, -1)
+            val resultUri = if (Build.VERSION.SDK_INT >= 33) {
+                intent.getParcelableExtra(EXTRA_RESULT_URI, Uri::class.java)
+            } else {
+                @Suppress("DEPRECATION")
+                intent.getParcelableExtra(EXTRA_RESULT_URI)
+            }
+            
+            if (notificationId != -1 && resultUri != null) {
+                serviceScope.launch {
+                    performUpdateNotification(resultUri, notificationId)
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                    stopSelf()
+                }
+                return START_NOT_STICKY
+            }
+        }
+        
+        val sourceUri = if (Build.VERSION.SDK_INT >= 33) {
+            intent?.getParcelableExtra(EXTRA_SOURCE_URI, Uri::class.java)
+        } else {
+            @Suppress("DEPRECATION")
+            intent?.getParcelableExtra(EXTRA_SOURCE_URI)
+        }
+
         serviceScope.launch {
             try {
-                performDualCapture()
+                if (sourceUri != null) {
+                    performRootlessDualCapture(sourceUri)
+                } else {
+                    // Only run legacy capture if NOT an update action
+                    if (intent?.action != ACTION_UPDATE_NOTIFICATION) {
+                        performDualCapture()
+                    }
+                }
             } catch (e: Exception) {
                 handleFailure(e)
             } finally {
@@ -101,8 +137,73 @@ class DualScreenshotService : Service() {
             .build()
     }
 
+    private suspend fun performUpdateNotification(resultUri: Uri, notificationId: Int) {
+        // Reload the bitmap to rebuild the notification
+        val bitmap = withContext(Dispatchers.IO) {
+            try {
+                contentResolver.openInputStream(resultUri)?.use { 
+                    BitmapFactory.decodeStream(it) 
+                }
+            } catch (e: Exception) {
+                null
+            }
+        }
+
+        if (bitmap != null) {
+            withContext(Dispatchers.Main) {
+                // Repost without sourceUri, effectively removing the "Delete Original" button
+                postResultNotification(resultUri, bitmap, null, notificationId)
+            }
+        } else {
+            // If file is gone, cancel notification
+            withContext(Dispatchers.Main) {
+                getSystemService(NotificationManager::class.java).cancel(notificationId)
+            }
+        }
+    }
+
+    private suspend fun performRootlessDualCapture(sourceUri: Uri) = coroutineScope {
+        DiagnosticsLogger.logEvent("DualScreenshot", "ROOTLESS_CAPTURE_START", "source=$sourceUri", this@DualScreenshotService)
+        
+        // 1. Load Bottom Bitmap (Source)
+        val bottomBitmap = withContext(Dispatchers.IO) {
+             contentResolver.openInputStream(sourceUri)?.use { 
+                 BitmapFactory.decodeStream(it) 
+             }
+        } ?: throw IllegalStateException("Failed to load bottom bitmap from $sourceUri")
+        
+        // 2. Bouncer: Dismiss PIP (via Global Back) + Delay
+        DiagnosticsLogger.logEvent("DualScreenshot", "PERFORM_BOUNCER_START", context=this@DualScreenshotService)
+        val bouncerSuccess = HomeKeyInterceptorService.instance?.performBack() == true
+        if (!bouncerSuccess) {
+             DiagnosticsLogger.logEvent("DualScreenshot", "BOUNCER_FAILED", "reason=service_null_or_fail", this@DualScreenshotService)
+        }
+        
+        // Wait for back animation / PIP fade out (200ms is usually enough for system anims)
+        delay(200)
+
+        // 3. Capture Top (Accessibility)
+        // Assuming Top is Display 0
+        val topBitmap = ScreenshotUtil.captureDisplay(this@DualScreenshotService, 0)
+        
+        val finalTop = topBitmap ?: createDebugBitmap(0, true)
+        
+        // 4. Stitch
+        val stitched = BitmapStitcher.stitch(finalTop, bottomBitmap)
+        
+        // 5. Save
+        val resultUri = saveBitmapToMediaStore(stitched)
+        
+        // 6. Notify
+        withContext(Dispatchers.Main) {
+            postResultNotification(resultUri, stitched, sourceUri)
+            Toast.makeText(this@DualScreenshotService, "Dual screenshot captured", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     private suspend fun performDualCapture() = coroutineScope {
-        // 1. Discover IDs using Root/Shell (since standard discovery is insufficient for capture)
+        // Existing Shell-based logic
+        // 1. Discover IDs
         val discoveredIds = ScreenshotUtil.discoverHardwareDisplayIds(this@DualScreenshotService)
         
         // We expect at least 2 IDs for a dual screen device. 
@@ -129,7 +230,8 @@ class DualScreenshotService : Service() {
         val uri = saveBitmapToMediaStore(stitched)
         
         withContext(Dispatchers.Main) {
-            postResultNotification(uri, stitched)
+            postResultNotification(uri, stitched, null)
+            Toast.makeText(this@DualScreenshotService, "Dual screenshot captured", Toast.LENGTH_SHORT).show()
         }
     }
     
@@ -170,9 +272,9 @@ class DualScreenshotService : Service() {
         return uri
     }
 
-    private fun postResultNotification(uri: Uri, bitmap: Bitmap) {
+    private fun postResultNotification(uri: Uri, bitmap: Bitmap, sourceUri: Uri?, existingId: Int? = null) {
         val channelId = "mjolnir_dualshot"
-        val notificationId = Random().nextInt()
+        val notificationId = existingId ?: Random().nextInt()
         val manager = getSystemService(NotificationManager::class.java)
         
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -203,28 +305,47 @@ class DualScreenshotService : Service() {
             this, 1, Intent.createChooser(shareIntent, "Share DualShot"), PendingIntent.FLAG_IMMUTABLE
         )
 
-        val deleteIntent = Intent(this, KeepAliveService::class.java).apply {
-            action = KeepAliveService.ACTION_DELETE_SCREENSHOT
+        // Update: "Delete Dual" now routes to ScreenshotActionActivity with a specific action
+        val deleteDualIntent = Intent(this, xyz.blacksheep.mjolnir.ScreenshotActionActivity::class.java).apply {
+            action = ACTION_DELETE_DUAL
             data = uri
             putExtra(KeepAliveService.EXTRA_NOTIFICATION_ID, notificationId)
         }
-        val deletePendingIntent = PendingIntent.getService(
-            this, notificationId, deleteIntent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        val deleteDualPendingIntent = PendingIntent.getActivity(
+            this, notificationId, deleteDualIntent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
         
-        val notification = NotificationCompat.Builder(this, channelId)
+        val builder = NotificationCompat.Builder(this, channelId)
             .setContentTitle("Dual Screenshot Saved")
             .setSmallIcon(R.drawable.ic_home)
             .setStyle(NotificationCompat.BigPictureStyle()
                 .bigPicture(bitmap)
                 .bigLargeIcon(null as Bitmap?))
             .setContentIntent(viewPendingIntent)
-            .addAction(android.R.drawable.ic_menu_share, "Share", sharePendingIntent)
-            .addAction(android.R.drawable.ic_menu_delete, "Delete", deletePendingIntent)
-            .setAutoCancel(true)
-            .build()
+            .setAutoCancel(false) // Persistent until swiped or deleted explicitly
 
-        manager.notify(notificationId, notification)
+        // Action 1: Share
+        builder.addAction(android.R.drawable.ic_menu_share, "Share", sharePendingIntent)
+        
+        // Action 2: Delete Dual
+        builder.addAction(android.R.drawable.ic_menu_delete, "Delete Dual", deleteDualPendingIntent)
+
+        // Action 3: Delete Original (if available)
+        if (sourceUri != null) {
+             val deleteSourceIntent = Intent(this, xyz.blacksheep.mjolnir.ScreenshotActionActivity::class.java).apply {
+                 action = xyz.blacksheep.mjolnir.ACTION_DELETE_SOURCE
+                 data = sourceUri
+                 putExtra(KeepAliveService.EXTRA_NOTIFICATION_ID, notificationId)
+                 // Pass the Result URI so we can update the notification later
+                 putExtra(EXTRA_RESULT_URI, uri)
+             }
+             val deleteSourcePendingIntent = PendingIntent.getActivity(
+                 this, notificationId + 1, deleteSourceIntent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+             )
+             builder.addAction(android.R.drawable.ic_delete, "Delete Original", deleteSourcePendingIntent)
+        }
+
+        manager.notify(notificationId, builder.build())
     }
 
     private fun handleFailure(e: Exception) {
@@ -241,6 +362,8 @@ class DualScreenshotService : Service() {
 
     companion object {
         private const val NOTIFICATION_ID = 2938
-        // REMOVED: projectionResultCode/Data
+        const val ACTION_UPDATE_NOTIFICATION = "xyz.blacksheep.mjolnir.ACTION_UPDATE_NOTIFICATION"
+        const val EXTRA_RESULT_URI = "xyz.blacksheep.mjolnir.EXTRA_RESULT_URI"
+        const val ACTION_DELETE_DUAL = "xyz.blacksheep.mjolnir.ACTION_DELETE_DUAL"
     }
 }
