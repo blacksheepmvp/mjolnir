@@ -56,7 +56,8 @@ object FocusLockOverlayWorkaround {
         // We wait a brief moment to let the app launch/resume animation start
         Handler(Looper.getMainLooper()).postDelayed({
             try {
-                FocusHackHelper.requestFocus(service, TOP_DISPLAY_ID, DURATION_SHOW_MS) {
+                // Updated to use the new FocusHackHelper signature (removed duration parameter)
+                FocusHackHelper.requestFocus(service, TOP_DISPLAY_ID) {
                     DiagnosticsLogger.logEvent(TAG, "WORKAROUND_COMPLETE", "Top screen focus hack finished.", service)
                 }
             } catch (e: Exception) {

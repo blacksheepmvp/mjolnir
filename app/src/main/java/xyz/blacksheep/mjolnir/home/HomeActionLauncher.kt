@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import xyz.blacksheep.mjolnir.KEY_BOTTOM_APP
 import xyz.blacksheep.mjolnir.KEY_MAIN_SCREEN
@@ -242,11 +243,13 @@ class HomeActionLauncher(private val context: Context) {
                     // Fire Top (Home) first, then Bottom (App).
                     launchTop()
                     // Small delay might be needed? Let's trust the system to queue intent vs home action
+                    delay(500) // Wait for FocusStealer and Home Action to process
                     launchBottom()
                 } else if (!topIsDefault && bottomIsDefault) {
                     // Bottom is Home, Top is App.
                     // Fire Bottom (Home) first, then Top (App).
                     launchBottom()
+                    delay(500) // Wait for FocusStealer and Home Action to process
                     launchTop()
                 } else {
                     // BOTH are default home. This means user wants Home on both screens.
@@ -254,9 +257,11 @@ class HomeActionLauncher(private val context: Context) {
                     // Focus order dictates Main Screen last.
                     if (mainScreen == MainScreen.TOP) {
                         launchBottom()
+                        delay(500)
                         launchTop()
                     } else {
                         launchTop()
+                        delay(500)
                         launchBottom()
                     }
                 }

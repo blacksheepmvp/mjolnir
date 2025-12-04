@@ -1214,35 +1214,12 @@ private fun HomeLauncherSettingsMenu(
 
     val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
     androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
-        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
-            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
-                // Check if we have a pending package waiting for default status
-                val pkg = pendingPackage
-                val isTop = pendingSlot
-
-                if (pkg != null && isTop != null) {
-                    if (isSystemDefaultHome(pkg)) {
-                        // User successfully set it as default! Apply the change.
-                        handleAppSelection(
-                            selectedAppPackage = pkg,
-                            isForTopSlot = isTop,
-                            currentTopApp = topApp,
-                            currentBottomApp = bottomApp,
-                            onTopAppChange = onTopAppChange,
-                            onBottomAppChange = onBottomAppChange,
-                            context = context
-                        )
-                        // Clear pending
-                        pendingPackage = null
-                        pendingSlot = null
-                    } else {
-                        // Still not default. Do nothing, leave slot as <Nothing>.
-                        // Optionally clear pending if you want to force them to try again,
-                        // but keeping it allows them to try multiple times.
-                        // Per spec: "If it does not match: Leave the slot as <Nothing>. In all cases, clear pending state."
-                        pendingPackage = null
-                        pendingSlot = null
-                    }
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                // When returning from another app (like system settings),
+                // just clear the pending state. The selection was already saved.
+                if (pendingPackage != null) {
+                    pendingPackage = null
+                    pendingSlot = null
                 }
             }
         }
@@ -1286,23 +1263,25 @@ private fun HomeLauncherSettingsMenu(
     }
 
     // Wrapper for selection logic to intercept special apps
+// Wrapper for selection logic to intercept special apps
     fun onAppSelectRequest(pkg: String, isTop: Boolean) {
+        // 1. Immediately handle and save the user's selection.
+        handleAppSelection(
+            selectedAppPackage = pkg,
+            isForTopSlot = isTop,
+            currentTopApp = topApp,
+            currentBottomApp = bottomApp,
+            onTopAppChange = onTopAppChange,
+            onBottomAppChange = onBottomAppChange,
+            context = context
+        )
+
+        // 2. After saving, check if the selected app requires being set as the default home.
         if (pkg in SPECIAL_HOME_APPS && !isSystemDefaultHome(pkg)) {
-            // Trigger the warning dialog
+            // If so, trigger the warning dialog to prompt the user.
             pendingPackage = pkg
-            pendingSlot = isTop
-            // Do NOT apply the change yet
-        } else {
-            // Normal path
-            handleAppSelection(
-                selectedAppPackage = pkg,
-                isForTopSlot = isTop,
-                currentTopApp = topApp,
-                currentBottomApp = bottomApp,
-                onTopAppChange = onTopAppChange,
-                onBottomAppChange = onBottomAppChange,
-                context = context
-            )
+            // We no longer need to track the slot, as the selection is already saved.
+            // pendingSlot = isTop
         }
     }
 

@@ -18,14 +18,17 @@ class HomeActivity : ComponentActivity() {
         val failureCount = prefs.getInt(KEY_LAUNCH_FAILURE_COUNT, 0)
 
         if (failureCount >= 3) {
-            // Too many failures, clear settings and go to stock launcher settings
+            // Too many failures, open settings so user can fix it.
+            // We do NOT wipe the configuration anymore, as that is frustrating.
             prefs.edit {
-                remove(KEY_TOP_APP)
-                remove(KEY_BOTTOM_APP)
-                remove(KEY_LAUNCH_FAILURE_COUNT)
+                putInt(KEY_LAUNCH_FAILURE_COUNT, 0)
             }
-            Toast.makeText(this, "Resetting home launcher due to repeated errors.", Toast.LENGTH_LONG).show()
-            val intent = Intent(Settings.ACTION_HOME_SETTINGS)
+            Toast.makeText(this, "Repeated launch failures. Opening Mjolnir settings.", Toast.LENGTH_LONG).show()
+            
+            // Redirect to Mjolnir Settings instead of System Home Settings
+            val intent = Intent(this, MainActivity::class.java).apply {
+                putExtra("open_settings", true)
+            }
             startActivity(intent)
             finish()
             return

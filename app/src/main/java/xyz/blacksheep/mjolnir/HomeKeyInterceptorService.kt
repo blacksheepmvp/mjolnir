@@ -491,4 +491,12 @@ class HomeKeyInterceptorService : AccessibilityService(), SharedPreferences.OnSh
         DiagnosticsLogger.logEvent("Gesture", "PERFORM_BACK_REQUESTED", context = this)
         return performGlobalAction(GLOBAL_ACTION_BACK)
     }
+
+    /**
+     * Public method to allow external components to trigger the GLOBAL_ACTION_HOME
+     * in the context of this accessibility service.
+     */
+    fun performGlobalHomeAction() {
+        performGlobalAction(GLOBAL_ACTION_HOME)
+    }
 }

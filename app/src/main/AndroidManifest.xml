@@ -112,6 +112,13 @@
             android:noHistory="true"
             android:theme="@style/Theme.Mjolnir.Transparent" />
 
+        <activity
+            android:name=".focus.FocusStealerActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:taskAffinity=""
+            android:theme="@style/Theme.Mjolnir.FocusStealer" />
+
         <service
             android:name=".MjolnirHomeTileService"
             android:exported="true"
