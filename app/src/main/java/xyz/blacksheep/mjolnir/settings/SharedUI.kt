@@ -2,6 +2,7 @@ package xyz.blacksheep.mjolnir.settings
 
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.drawable.Drawable
 import android.net.Uri
 import android.provider.Settings
@@ -71,6 +72,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -109,6 +111,7 @@ import xyz.blacksheep.mjolnir.KEY_APP_BLACKLIST
 import xyz.blacksheep.mjolnir.KEY_CUSTOM_DOUBLE_TAP_DELAY
 import xyz.blacksheep.mjolnir.KEY_DOUBLE_HOME_ACTION
 import xyz.blacksheep.mjolnir.KEY_ENABLE_FOCUS_LOCK_WORKAROUND
+import xyz.blacksheep.mjolnir.KEY_HOME_INTERCEPTION_ACTIVE
 import xyz.blacksheep.mjolnir.KEY_LONG_HOME_ACTION
 import xyz.blacksheep.mjolnir.KEY_SINGLE_HOME_ACTION
 import xyz.blacksheep.mjolnir.KEY_TRIPLE_HOME_ACTION
@@ -1177,6 +1180,132 @@ private fun HomeLauncherSettingsMenu(
 
     val mainScreenOptions = MainScreen.entries.map { it.name }
 
+    // --- SPECIAL CASE HANDLING FOR QUICKSTEP / ODIN ---
+    val SPECIAL_HOME_APPS = remember {
+        setOf("com.android.launcher3", "com.odin.odinlauncher")
+    }
+
+    // Pending state for when a special app is selected but not yet set as default
+    var pendingSlot by remember { mutableStateOf<Boolean?>(null) } // true = top, false = bottom, null = none
+    var pendingPackage by remember { mutableStateOf<String?>(null) }
+
+    // Helper to check if a package is the current system default home
+    fun isSystemDefaultHome(pkg: String): Boolean {
+        val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+        val resolveInfo = context.packageManager.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)
+        return resolveInfo?.activityInfo?.packageName == pkg
+    }
+
+    // Re-check pending state when the screen resumes (e.g. back from system settings)
+    // Note: In Compose, we use lifecycle effects or simple recomposition triggers.
+    // Since we don't have a simple onResume here without extra dependencies,
+    // we can rely on the user interaction flow or a side-effect if the window focus changes.
+    // For simplicity in this snippet, we check when the composition enters or updates.
+    LaunchedEffect(Unit) {
+        // This runs on first composition. Ideally we want to check on resume.
+        // A more robust way in pure Compose without LifecycleEventObserver is tricky,
+        // but typically the user will click 'Set Default Home', go to system UI, and come back.
+        // When they come back, if we can trigger a check, we're good.
+        // For now, we handle the check in the dialog's "positive button" flow or rely on re-composition if the parent triggers it.
+    }
+
+    // We use a LifecycleEventObserver to detect onResume if needed, but let's keep it simple first.
+    // We will check immediately if there is a pending state.
+
+    val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                // Check if we have a pending package waiting for default status
+                val pkg = pendingPackage
+                val isTop = pendingSlot
+
+                if (pkg != null && isTop != null) {
+                    if (isSystemDefaultHome(pkg)) {
+                        // User successfully set it as default! Apply the change.
+                        handleAppSelection(
+                            selectedAppPackage = pkg,
+                            isForTopSlot = isTop,
+                            currentTopApp = topApp,
+                            currentBottomApp = bottomApp,
+                            onTopAppChange = onTopAppChange,
+                            onBottomAppChange = onBottomAppChange,
+                            context = context
+                        )
+                        // Clear pending
+                        pendingPackage = null
+                        pendingSlot = null
+                    } else {
+                        // Still not default. Do nothing, leave slot as <Nothing>.
+                        // Optionally clear pending if you want to force them to try again,
+                        // but keeping it allows them to try multiple times.
+                        // Per spec: "If it does not match: Leave the slot as <Nothing>. In all cases, clear pending state."
+                        pendingPackage = null
+                        pendingSlot = null
+                    }
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
+    if (pendingPackage != null) {
+        AlertDialog(
+            onDismissRequest = {
+                // User cancelled or tapped outside
+                pendingPackage = null
+                pendingSlot = null
+            },
+            title = { Text("Requires default home") },
+            text = {
+                // Try to get the app label for the message
+                val label = launcherApps.find { it.packageName == pendingPackage }?.label ?: pendingPackage ?: "App"
+                Text("In order to use $label with Mjolnir, you must also set $label as your default home.")
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    // Launch system home picker
+                    onSetDefaultHome()
+                    // Do NOT clear pending state here; we wait for onResume
+                }) {
+                    Text("Set Default Home")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    pendingPackage = null
+                    pendingSlot = null
+                }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    // Wrapper for selection logic to intercept special apps
+    fun onAppSelectRequest(pkg: String, isTop: Boolean) {
+        if (pkg in SPECIAL_HOME_APPS && !isSystemDefaultHome(pkg)) {
+            // Trigger the warning dialog
+            pendingPackage = pkg
+            pendingSlot = isTop
+            // Do NOT apply the change yet
+        } else {
+            // Normal path
+            handleAppSelection(
+                selectedAppPackage = pkg,
+                isForTopSlot = isTop,
+                currentTopApp = topApp,
+                currentBottomApp = bottomApp,
+                onTopAppChange = onTopAppChange,
+                onBottomAppChange = onBottomAppChange,
+                context = context
+            )
+        }
+    }
+
     Scaffold(
         topBar = {
             Surface(tonalElevation = 2.dp) {
@@ -1313,13 +1442,9 @@ private fun HomeLauncherSettingsMenu(
                                                 )
                                             },
                                             onClick = {
-                                                handleAppSelection(
-                                                    selectedAppPackage = app.packageName,
-                                                    isForTopSlot = true,
-                                                    currentTopApp = topApp,
-                                                    currentBottomApp = bottomApp,
-                                                    onTopAppChange = onTopAppChange,
-                                                    onBottomAppChange = onBottomAppChange
+                                                onAppSelectRequest(
+                                                    pkg = app.packageName,
+                                                    isTop = true
                                                 )
                                                 topExpanded = false
                                             }
@@ -1403,13 +1528,9 @@ private fun HomeLauncherSettingsMenu(
                                                 )
                                             },
                                             onClick = {
-                                                handleAppSelection(
-                                                    selectedAppPackage = app.packageName,
-                                                    isForTopSlot = false,
-                                                    currentTopApp = topApp,
-                                                    currentBottomApp = bottomApp,
-                                                    onTopAppChange = onTopAppChange,
-                                                    onBottomAppChange = onBottomAppChange
+                                                onAppSelectRequest(
+                                                    pkg = app.packageName,
+                                                    isTop = false
                                                 )
                                                 bottomExpanded = false
                                             }
@@ -2130,22 +2251,48 @@ private fun handleAppSelection(
     currentTopApp: String?,
     currentBottomApp: String?,
     onTopAppChange: (String?) -> Unit,
-    onBottomAppChange: (String?) -> Unit
+    onBottomAppChange: (String?) -> Unit,
+    context: Context
 ) {
+    val newTopApp: String?
+    val newBottomApp: String?
+
     if (isForTopSlot) {
         // User is selecting an app for the TOP slot
+        newTopApp = if (selectedAppPackage == "NOTHING") null else selectedAppPackage
         if (selectedAppPackage == currentBottomApp) {
             // The selected app is already in the bottom slot, so swap
-            onBottomAppChange(currentTopApp) // Old top app moves to the bottom
+            newBottomApp = currentTopApp // Old top app moves to the bottom
+        } else {
+            newBottomApp = currentBottomApp
         }
-        onTopAppChange(selectedAppPackage) // Assign new app to the top slot
     } else {
         // User is selecting an app for the BOTTOM slot
+        newBottomApp = if (selectedAppPackage == "NOTHING") null else selectedAppPackage
         if (selectedAppPackage == currentTopApp) {
             // The selected app is already in the top slot, so swap
-            onTopAppChange(currentBottomApp) // Old bottom app moves to the top
+            newTopApp = currentBottomApp // Old bottom app moves to the top
+        } else {
+            newTopApp = currentTopApp
         }
-        onBottomAppChange(selectedAppPackage) // Assign new app to the bottom slot
+    }
+
+    onTopAppChange(newTopApp)
+    onBottomAppChange(newBottomApp)
+
+    // --- "NO-HOME" INVARIANT CHECK ---
+    if (newTopApp == null && newBottomApp == null) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        if (prefs.getBoolean(KEY_HOME_INTERCEPTION_ACTIVE, false)) {
+            prefs.edit().putBoolean(KEY_HOME_INTERCEPTION_ACTIVE, false).apply()
+            // The tile will update automatically via its listener.
+            // We can show a toast for immediate feedback.
+            Toast.makeText(
+                context,
+                "Home capture disabled: No apps selected.",
+                Toast.LENGTH_LONG
+            ).show()
+        }
     }
 }
 

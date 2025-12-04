@@ -35,14 +35,27 @@ class AppQueryHelper(private val context: Context) {
     /**
      * Retrieves the current set of blacklisted package names from SharedPreferences.
      *
-     * If no blacklist is found, it defaults to hiding the system launcher (Quickstep)
-     * and Android Settings to avoid cluttering the Mjolnir launcher.
+     * If no blacklist is found (key missing), it initializes the preference with a default set
+     * of apps (Quickstep, Settings, Odin Launcher) and returns that set.
+     * This ensures that the UI (which reads the pref directly) sees the defaults on a fresh install.
      */
     private fun getBlacklist(): Set<String> {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        // Default to blacklisting Quickstep (com.android.launcher3) and Android Settings if no preference exists
-        val defaultBlacklist = setOf("com.android.launcher3", "com.android.settings")
-        return prefs.getStringSet(KEY_APP_BLACKLIST, null) ?: defaultBlacklist
+        
+        // Explicitly check for key existence to distinguish "uninitialized" from "user cleared"
+        if (!prefs.contains(KEY_APP_BLACKLIST)) {
+            val defaultBlacklist = setOf(
+                "com.android.launcher3",
+                "com.android.settings",
+                "com.odin.odinlauncher"
+            )
+            // Initialize the preference on disk so other components (e.g. Settings UI) see the correct state
+            prefs.edit().putStringSet(KEY_APP_BLACKLIST, defaultBlacklist).apply()
+            return defaultBlacklist
+        }
+        
+        // If key exists, we trust the value (even if empty)
+        return prefs.getStringSet(KEY_APP_BLACKLIST, emptySet()) ?: emptySet()
     }
 
     /**

@@ -85,14 +85,6 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Handle being launched as a Home app
-        if (intent.hasCategory(Intent.CATEGORY_HOME)) {
-            val launcher = HomeActionLauncher(this)
-            launcher.launchBoth()
-            finish()
-            return // Do not proceed to show UI
-        }
-
         installSplashScreen()
 
         WindowCompat.setDecorFitsSystemWindows(window, false)
@@ -472,8 +464,14 @@ class MainActivity : ComponentActivity() {
                             showAllApps = newShowAllApps
                         },
                         onSetDefaultHome = {
-                            val intent = Intent(Settings.ACTION_HOME_SETTINGS)
-                            startActivity(intent)
+                            DiagnosticsLogger.logEvent("Settings", "SET_DEFAULT_HOME_CLICKED", context = this@MainActivity)
+                            try {
+                                val intent = Intent(Settings.ACTION_HOME_SETTINGS)
+                                startActivity(intent)
+                            } catch (e: Exception) {
+                                DiagnosticsLogger.logEvent("Error", "SET_DEFAULT_HOME_FAILED", "msg=${e.message}", this@MainActivity)
+                                Toast.makeText(this@MainActivity, "Could not open Home Settings.", Toast.LENGTH_SHORT).show()
+                            }
                         },
                         onLaunchDualScreen = {
                             scope.launch {

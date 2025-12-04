@@ -11,8 +11,8 @@ android {
         applicationId = "xyz.blacksheep.mjolnir"
         minSdk = 24
         targetSdk = 34
-        versionCode = 12
-        versionName = "0.2.5c"
+        versionCode = 13
+        versionName = "0.2.5d"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

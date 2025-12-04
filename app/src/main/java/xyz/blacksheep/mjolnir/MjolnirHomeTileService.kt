@@ -1,6 +1,5 @@
 package xyz.blacksheep.mjolnir
 
-import android.accessibilityservice.AccessibilityServiceInfo
 import android.annotation.SuppressLint
 import android.content.ComponentName
 import android.content.Context
@@ -10,10 +9,9 @@ import android.provider.Settings
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
 import android.text.TextUtils
-import android.view.accessibility.AccessibilityManager
+import android.widget.Toast
 import androidx.core.content.edit
 import xyz.blacksheep.mjolnir.utils.DiagnosticsLogger
-import xyz.blacksheep.mjolnir.utils.DualScreenshotManager
 
 /**
  * A Quick Settings Tile that allows the user to toggle the Home Button Interception feature on/off.
@@ -51,10 +49,33 @@ class MjolnirHomeTileService : TileService(), SharedPreferences.OnSharedPreferen
         DiagnosticsLogger.logEvent("Tile", "TILE_CLICKED", context = this)
 
         if (isAccessibilityServiceEnabled(this)) {
-            // The service is enabled, so the tile functions as a simple on/off switch.
-            val newValue = !prefs.getBoolean(KEY_HOME_INTERCEPTION_ACTIVE, false)
-            prefs.edit { putBoolean(KEY_HOME_INTERCEPTION_ACTIVE, newValue) }
-            DiagnosticsLogger.logEvent("Tile", "TOGGLE_INTERCEPTION", "newValue=$newValue from=tile", this)
+            // The service is enabled, so the tile functions as an on/off switch.
+            val wantsToEnable = !prefs.getBoolean(KEY_HOME_INTERCEPTION_ACTIVE, false)
+
+            if (wantsToEnable) {
+                // --- "NO-HOME" INVARIANT CHECK ---
+                val topApp = prefs.getString(KEY_TOP_APP, null)
+                val bottomApp = prefs.getString(KEY_BOTTOM_APP, null)
+
+                if (topApp.isNullOrEmpty() && bottomApp.isNullOrEmpty()) {
+                    // Refuse to enable if no apps are set.
+                    Toast.makeText(
+                        this,
+                        "Set at least one Home app before enabling Home capture.",
+                        Toast.LENGTH_LONG
+                    ).show()
+                    // Ensure the state remains false. The tile will update automatically.
+                    if (prefs.getBoolean(KEY_HOME_INTERCEPTION_ACTIVE, false)) {
+                        prefs.edit { putBoolean(KEY_HOME_INTERCEPTION_ACTIVE, false) }
+                    }
+                    return // Exit early
+                }
+            }
+
+            // Proceed with toggling the value
+            prefs.edit { putBoolean(KEY_HOME_INTERCEPTION_ACTIVE, wantsToEnable) }
+            DiagnosticsLogger.logEvent("Tile", "TOGGLE_INTERCEPTION", "newValue=$wantsToEnable from=tile", this)
+
         } else {
             // The service is not enabled, so take the user to settings to enable it.
             val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)

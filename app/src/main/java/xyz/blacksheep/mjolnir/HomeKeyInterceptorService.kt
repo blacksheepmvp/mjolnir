@@ -2,11 +2,13 @@ package xyz.blacksheep.mjolnir
 
 import android.Manifest
 import android.accessibilityservice.AccessibilityService
+import android.annotation.SuppressLint
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.SharedPreferences
+import android.hardware.display.DisplayManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -16,9 +18,9 @@ import android.os.Vibrator
 import android.view.KeyEvent
 import android.view.ViewConfiguration
 import android.view.accessibility.AccessibilityEvent
+import android.view.accessibility.AccessibilityWindowInfo
 import android.widget.Toast
 import androidx.annotation.RequiresPermission
-import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -29,6 +31,7 @@ import xyz.blacksheep.mjolnir.home.HomeActionLauncher
 import xyz.blacksheep.mjolnir.home.actionLabel
 import xyz.blacksheep.mjolnir.services.KeepAliveService
 import xyz.blacksheep.mjolnir.utils.DiagnosticsLogger
+import xyz.blacksheep.mjolnir.utils.DualScreenLauncher
 import xyz.blacksheep.mjolnir.workarounds.FocusLockOverlayWorkaround
 
 /**
@@ -52,6 +55,7 @@ class HomeKeyInterceptorService : AccessibilityService(), SharedPreferences.OnSh
         private const val TAG = "HomeKeyInterceptorService"
         var instance: HomeKeyInterceptorService? = null
         const val ACTION_REQ_COLLAPSE_SHADE = "xyz.blacksheep.mjolnir.ACTION_REQ_COLLAPSE_SHADE"
+        const val ACTION_REQ_SWAP_SCREENS = "xyz.blacksheep.mjolnir.ACTION_REQ_SWAP_SCREENS"
     }
 
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
@@ -74,25 +78,23 @@ class HomeKeyInterceptorService : AccessibilityService(), SharedPreferences.OnSh
     // Receiver for cross-process requests (e.g. from KeepAliveService)
     private val collapseShadeReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            if (intent?.action == ACTION_REQ_COLLAPSE_SHADE) {
-                DiagnosticsLogger.logEvent("Gesture", "SHADE_COLLAPSE_REQ_RECEIVED", context = this@HomeKeyInterceptorService)
-                if (Build.VERSION.SDK_INT >= 31) {
-                    val success = performGlobalAction(AccessibilityService.GLOBAL_ACTION_DISMISS_NOTIFICATION_SHADE)
-                    DiagnosticsLogger.logEvent("Gesture", "SHADE_COLLAPSE_PERFORMED", "success=$success method=global_action", this@HomeKeyInterceptorService)
-                } else {
-                    try {
-                        @Suppress("DEPRECATION")
-                        sendBroadcast(Intent(Intent.ACTION_CLOSE_SYSTEM_DIALOGS))
-                        DiagnosticsLogger.logEvent("Gesture", "SHADE_COLLAPSE_PERFORMED", "method=broadcast_legacy", this@HomeKeyInterceptorService)
-                    } catch (e: Exception) {
-                        DiagnosticsLogger.logEvent("Gesture", "SHADE_COLLAPSE_FAILED", "reason=${e.message}", this@HomeKeyInterceptorService)
+            when (intent?.action) {
+                ACTION_REQ_COLLAPSE_SHADE -> {
+                    DiagnosticsLogger.logEvent("Gesture", "SHADE_COLLAPSE_REQ_RECEIVED", context = this@HomeKeyInterceptorService)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        performGlobalAction(AccessibilityService.GLOBAL_ACTION_DISMISS_NOTIFICATION_SHADE)
                     }
+                }
+                ACTION_REQ_SWAP_SCREENS -> {
+                    DiagnosticsLogger.logEvent("Gesture", "SWAP_SCREENS_REQ_RECEIVED", context = this@HomeKeyInterceptorService)
+                    performScreenSwap()
                 }
             }
         }
     }
 
 
+    @SuppressLint("UnspecifiedRegisterReceiverFlag")
     override fun onServiceConnected() {
         super.onServiceConnected()
         DiagnosticsLogger.logEvent("Service", "ACCESSIBILITY_CONNECTED", context = this)
@@ -103,7 +105,10 @@ class HomeKeyInterceptorService : AccessibilityService(), SharedPreferences.OnSh
         updateGestureConfig()
 
         // Register receiver
-        val filter = IntentFilter(ACTION_REQ_COLLAPSE_SHADE)
+        val filter = IntentFilter().apply {
+            addAction(ACTION_REQ_COLLAPSE_SHADE)
+            addAction(ACTION_REQ_SWAP_SCREENS)
+        }
         if (Build.VERSION.SDK_INT >= 33) {
             registerReceiver(collapseShadeReceiver, filter, RECEIVER_NOT_EXPORTED)
         } else {
@@ -135,6 +140,71 @@ class HomeKeyInterceptorService : AccessibilityService(), SharedPreferences.OnSh
 
         } catch (e: Exception) {
             DiagnosticsLogger.logException("Gesture", e, this)
+        }
+    }
+
+    private fun performScreenSwap() {
+        // Collapse shade first so it doesn't get in the way
+        performGlobalAction(AccessibilityService.GLOBAL_ACTION_DISMISS_NOTIFICATION_SHADE)
+
+        // We need to find the active app. 
+        // getWindows() returns windows in Z-order (front to back).
+        // The first window we find that is TYPE_APPLICATION and not us is likely the "Focused" app
+        // (or the one the user was using before pulling down the shade).
+        
+        val windows = windows
+        val dm = getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
+        val displays = dm.displays
+        val topDisplayId = displays.getOrNull(0)?.displayId ?: 0
+
+        var targetPkg: String? = null
+        var currentDisplayId = -1
+
+        for (window in windows) {
+            if (window.type == AccessibilityWindowInfo.TYPE_APPLICATION) {
+                val pkg = window.root?.packageName?.toString()
+                if (pkg != null && pkg != packageName) {
+                    targetPkg = pkg
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                        currentDisplayId = window.displayId
+                    }
+                    break // Found the top-most app
+                }
+            }
+        }
+
+        if (targetPkg != null) {
+             DiagnosticsLogger.logEvent("Swap", "SWAP_TARGET_FOUND", "pkg=$targetPkg display=$currentDisplayId", this)
+
+            // Determine target display: Opposite of current
+            val isCurrentlyOnTop = (currentDisplayId == topDisplayId)
+            val targetIsTop = !isCurrentlyOnTop
+
+            // Launch on the opposite screen. 
+            // The OS/Hardware logic should handle moving the "other" app automatically.
+            
+            // Slight delay to allow shade to close
+            Handler(Looper.getMainLooper()).postDelayed({
+                launchPackageOnDisplay(targetPkg, isTop = targetIsTop)
+            }, 250)
+        } else {
+            DiagnosticsLogger.logEvent("Swap", "SWAP_NO_TARGET", "msg=No active app found", this)
+            Toast.makeText(this, "No active app found to swap", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun launchPackageOnDisplay(pkgName: String, isTop: Boolean) {
+        try {
+            val launchIntent = packageManager.getLaunchIntentForPackage(pkgName)
+            if (launchIntent != null) {
+                if (isTop) {
+                    DualScreenLauncher.launchOnTop(this, launchIntent)
+                } else {
+                    DualScreenLauncher.launchOnBottom(this, launchIntent)
+                }
+            }
+        } catch (e: Exception) {
+            DiagnosticsLogger.logEvent("Swap", "SWAP_LAUNCH_FAILED", "pkg=$pkgName error=${e.message}", this)
         }
     }
 
@@ -277,6 +347,10 @@ class HomeKeyInterceptorService : AccessibilityService(), SharedPreferences.OnSh
             Action.APP_SWITCH -> {
                 DiagnosticsLogger.logEvent("Gesture", "ACTION_RECENTS_TRIGGERED", context = this)
                 performGlobalAction(GLOBAL_ACTION_RECENTS)
+            }
+            Action.DEFAULT_HOME -> {
+                DiagnosticsLogger.logEvent("Gesture", "ACTION_HOME_PASSTHROUGH", context = this)
+                performGlobalAction(GLOBAL_ACTION_HOME)
             }
         }
 
