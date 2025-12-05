@@ -1,396 +1,164 @@
-# Mjolnir Project – High‑Level Architectural & Behavioral Summary
+# Mjolnir Project – Architecture & Master Context
 
-This file serves as a **context pack** for future development, debugging, refactoring, or onboarding of an AI assistant or human collaborator. It intentionally avoids raw code and instead captures:
+> **Status:** Active Development
+> **Target Device:** AYN Thor (Dual-Screen Android Handheld)
+> **Core Function:** Dual-Screen Home Launcher & Utility Suite
 
-* What each module *is*, *does*, and *depends on*
-* How the components interact
-* What design decisions have been made and why
-* What pitfalls we've encountered and must avoid in the future
-* What behaviors are expected at runtime
-* What assumptions about the AYN Thor dual‑screen environment shaped the design
-* Future‑proofing notes
-
-This is **not** implementation documentation. It is a cognitive map of the entire codebase.
+This document is the **single source of truth** for Mjolnir's architecture, behavior, and constraints. It consolidates previous specifications and architectural notes.
 
 ---
 
-# 📌 Core Architectural Overview
+# 1. Core Constraints & Principles
 
-Mjolnir is an Android app designed specifically for **dual‑screen gaming handhelds** (especially the AYN Thor). It provides:
+These rules apply to all development on this project.
 
-* A **dual-screen home launcher** (top and bottom screens launch separate activities)
-* **Home button interception** using an AccessibilityService
-* **Foreground service + persistent notification** to keep the app process alive
-* User‑defined **gesture mapping** for single/double/triple/long Home presses
-* UI for configuring the home apps and gesture actions
-* An **in‑memory volatile icon cache** that is prewarmed on app startup
-* Querying, filtering, and dynamically displaying installed apps with icons
+1.  **Target Hardware Assumptions:**
+    *   **Display 0 (Top):** Primary display.
+    *   **Display 1 (Bottom):** Secondary display.
+    *   **Hardware Mirroring:** Using `MediaProjection` on Display 1 results in a mirrored Display 0 image. **`MediaProjection` is BANNED for DSS.**
 
-The architecture heavily relies on Android’s multi‑display API (`setLaunchDisplayId`) and must carefully avoid behaviors that break multi‑screen compatibility.
+2.  **Performance & Threading:**
+    *   **No Blocking UI:** App list queries and icon loading must be prewarmed and cached.
+    *   **Icon Cache:** Icons are cached in-memory (volatile) to ensure instant UI rendering.
 
----
+3.  **Code Hygiene:**
+    *   **Explicit Imports:** Do not rely on IDE auto-imports for new types.
+    *   **No BOM Churn:** Do not change Compose/Kotlin versions without explicit authorization.
+    *   **SharedPreferences:** Must use keys defined in `Constants.kt`. Never hardcode strings.
 
-# 📁 File‑by‑File System Summary
-
-Below is a structured overview of each major file, what it contains, and its role.
-
----
-
-# 1. `MjolnirApp.kt` – Application Root
-
-### **Responsibility:**
-
-* Runs when the Mjolnir process starts.
-* Creates notification channels.
-* Starts background prewarm of all app icons.
-
-### **Key Behaviors:**
-
-* Defines `onCreate()` which is executed once per app process lifetime.
-* Launches a coroutine on `Dispatchers.IO` to execute `AppQueryHelper.prewarmAllApps(...)`.
-* Because the app has a persistent foreground service, **the process stays alive even if the UI closes**, so the cache persists.
-
-### **Why This Matters:**
-
-* Speeds up UI app lists significantly.
-* Reduces recomposition lag.
-* Ensures Home launcher config UI loads instantly.
-
-### **Pitfalls Avoided:**
-
-* Don’t put UI logic here.
-* Don’t block the main thread.
-* Never remove the persistent notification setup.
+4.  **Process Model:**
+    *   **Unified Process:** The app runs in a single process. `KeepAliveService` must **NOT** run in a separate process (e.g., `:keepalive`) to ensure `SharedPreferences` listeners fire instantly across UI and Service components.
 
 ---
 
-# 2. `AndroidManifest.xml` – Process Anchoring & Activities
+# 2. Architecture Overview
 
-### **Responsibility:**
+Mjolnir consists of a launcher UI, a background persistence service, and an accessibility service for gesture interception.
 
-* Defines application components.
-* Requests permissions.
-* Marks activities as multi‑display compatible.
-* Defines AccessibilityService.
+## 2.1 Core Components
 
-### **Important Configurations:**
+### `MjolnirApp.kt` (Application Root)
+*   **Role:** App lifecycle root.
+*   **Behavior:** Triggers background icon prewarming (`AppQueryHelper.prewarmAllApps`) on creation.
 
-* `HomeKeyInterceptorService` declared with `BIND_ACCESSIBILITY_SERVICE`.
-* `KeepAliveService` declared as a foreground service.
-* `MainActivity` uses:
+### `HomeActivity` (Previously MainActivity)
+*   **Role:** The actual Launcher Activity that Android launches when Home is pressed.
+*   **Behavior:**
+    *   If `HOME_INTERCEPTION_ACTIVE` is true: Acts as a dummy/pass-through for the Accessibility Service to handle logic.
+    *   If `HOME_INTERCEPTION_ACTIVE` is false (Basic Mode): Executes fallback logic (Both/Top/Bottom launch) directly.
+*   **Launch Mode:** `standard` (required for dual displays), `fullSensor`, `resizeableActivity="true"`.
 
-  * `launchMode="standard"` (required for dual displays)
-  * `screenOrientation="fullSensor"`
-  * `resizeableActivity="true"`
-* Intent filters for HOME + LAUNCHER both point to `MainActivity` (after consolidation).
+### `KeepAliveService.kt` (Foreground Anchor)
+*   **Role:** Keeps the app process alive via a persistent foreground notification.
+*   **New Role:** Acts as the **Screenshot Observer**.
+*   **Behavior:**
+    *   Monitors `MediaStore` for new images.
+    *   Triggers "Auto-Stitch" DSS when a bottom-screen screenshot is detected.
+    *   Observes `SharedPreferences` to update notification actions dynamically.
 
-### **Pitfalls Avoided:**
+### `HomeKeyInterceptorService.kt` (Accessibility Service)
+*   **Role:** Intercepts hardware Home button events.
+*   **Behavior:**
+    *   Detects Single/Double/Triple/Long presses.
+    *   Dispatches actions based on user preferences.
+    *   Provides `AccessibilityService.performGlobalAction(GLOBAL_ACTION_BACK)` for the DSS "Bouncer" logic.
 
-* A dedicated `HomeActivity` caused the app to appear twice in the launcher.
-* Must not use singleTask/singleInstance launch modes.
+### `HomeActionLauncher.kt` (Multi-Display Logic)
+*   **Role:** Launches activities on specific displays.
+*   **Logic:** Uses `ActivityOptions.setLaunchDisplayId(0 or 1)`.
+*   **Constraint:** Must handle cases where Display 1 is momentarily unavailable.
 
----
-
-# 3. `HomeKeyInterceptorService.kt` – Accessibility‑Based Home Button Listener
-
-### **Responsibility:**
-
-* Listens for all Home button presses.
-* Detects single/double/triple/long Home gestures.
-* Dispatches appropriate actions (TOP_HOME, BOTTOM_HOME, BOTH_HOME).
-
-### **Key Behaviors:**
-
-* Uses system events from Accessibility.
-* Uses timestamps to detect gesture types.
-* Saves gesture actions in SharedPreferences using constants.
-* Delegates actual launching to `HomeActionLauncher`.
-* Provides optional haptic feedback.
-* Auto‑launches BOTH_HOME on boot if user enabled that option.
-
-### **Pitfalls Encountered:**
-
-* Hardcoded preference keys caused major bugs; now uses constants.
-* Haptics may not work on AYN Thor.
-* Runs inside accessibility sandbox — must not crash.
+### `SharedUI.kt` (The Monolith)
+*   **Role:** Contains almost all UI/Settings code.
+*   **Status:** Scheduled for refactor/breakup in **v0.3.0**.
+*   **Caution:** High risk of breakage. Modify with extreme care.
 
 ---
 
-# 4. `KeepAliveService.kt` – Foreground Process Anchor
+# 3. Feature Implementation Details
 
-### **Responsibility:**
+## 3.1 Dual-Screen Screenshot (DSS) – "Auto-Stitch"
+**Strategy:** Rootless, Reactive, "Work with the OS."
 
-* Keeps the process alive.
-* Presents persistent notification.
-* Ensures icon cache + logic survives UI swipes.
+*   **Concept:** Instead of fighting the hardware mirroring bug, Mjolnir reacts to the user taking a standard system screenshot (which captures the focused Bottom screen).
+*   **Workflow:**
+    1.  **User:** Toggles "DualShot: Auto" in Quick Settings.
+    2.  **User:** Takes a standard screenshot (VolDown+Power).
+    3.  **KeepAliveService:** Detects new image in `MediaStore`. Verifies it matches Bottom Display dimensions and isn't a Mjolnir output.
+    4.  **Bouncer:** Triggers `GLOBAL_ACTION_BACK` (via Accessibility) + 150ms delay to clear the screenshot UI.
+    5.  **Capture:** Captures Top Display via `AccessibilityService.takeScreenshot`.
+    6.  **Stitch:** Combines Top (Accessibility) + Bottom (MediaStore Source) into one PNG.
+    7.  **Result:** Notification offers to "Delete Dual" or "Delete Original (Source)".
 
-### **Why This Matters:**
+## 3.2 Focus Management – `FocusStealerActivity`
+**Problem:** Android does not treat overlay windows (`TYPE_APPLICATION_OVERLAY`) as focus owners, breaking `GLOBAL_ACTION_HOME` routing and game controller input on specific screens.
 
-* Android kills background processes frequently.
-* Foreground service promotes app to “important” process state.
-* Without this, icon cache and gesture detection would reset often.
+*   **Solution:** A transient, invisible `Activity` (`FocusStealerActivity`).
+*   **Mechanism:**
+    1.  `FocusHackHelper` stores a pending action (lambda).
+    2.  Launches `FocusStealerActivity` on the target display (0 or 1).
+    3.  Activity becomes top-resumed -> gains true focus.
+    4.  Activity executes lambda -> finishes immediately.
+*   **Use Case:** Routing Home commands to the correct screen; fixing "Focus Lock" bugs.
 
----
-
-# 5. `HomeActionLauncher.kt` – Multi‑Display App Launcher
-
-### **Responsibility:**
-
-* Launches apps on a specific display.
-* Selects display 0 (top) or display 1 (bottom).
-* Launches both in user‑defined order if doing dual launch.
-
-### **Key Behaviors:**
-
-* Reads `KEY_TOP_APP`, `KEY_BOTTOM_APP`.
-* Reads `MainScreen` enum for which display is primary.
-* Uses `ActivityOptions.makeBasic().setLaunchDisplayId(...)`.
-
-### **Pitfalls Avoided:**
-
-* Must use display IDs 0 and 1.
-* Must use `ActivityOptions` not startActivity alone.
-* Must avoid crashing when display 1 is unavailable.
+## 3.3 Gesture System
+*   **Input:** Hardware Home button events timestamped in `HomeKeyInterceptorService`.
+*   **Mapping:** User configurable (Single, Double, Triple, Long).
+*   **Actions:** Launch App (Top/Bottom), Open Notification Shade, Quick Settings, Dual Screenshot, etc.
 
 ---
 
-# 6. `SharedUI.kt` – Large Composable UI & State Management
+# 4. Roadmap & Onboarding Spec (v0.2.5)
 
-### **Responsibility:**
+## 4.1 Improved Onboarding (Spec)
+**Goal:** Replace the static "HomeSetup" screen with a guided, state-aware flow.
 
-* Entire settings interface.
-* App list pickers.
-* Home button behavior settings.
-* Double‑tap delay controls.
-* Filtering (launcher apps vs all apps).
+### Core Rules
+1.  **Trigger:** Fresh install, Invalid config, or User taps “Initialize Mjolnir Home”.
+2.  **State Buffering:** **Do not write** to `SharedPreferences` until the flow commits. Use in-memory state (`OnboardingViewModel`).
+3.  **Re-entry:** Always starts at Entry Screen. Does not wipe valid config unless committed.
 
-### **Key Components:**
+### Flow
+**1. Entry Screen:**
+*   Welcome text + Options: **Basic**, **Advanced**, **No Home Setup**.
+*   Diagnostics Toggle (with info bubble).
 
-* **HomeLauncherSettingsMenu()**: The massive central composable.
-* **AppSlotCard()**: Visual representation of a chosen app.
-* **Dropdown for picking apps** (ExposedDropdownMenuBox).
-* **Three‑column grid** built with ConstraintLayout.
-* **Gesture mapping controls** with `RadioButton` and enum selectors.
+**2. BASIC Mode (No Permissions/Services):**
+*   **Step B1:** Top/Bottom Home Selection (Reuse App Picker).
+*   **Step B2 (Commit):** Write prefs. Set `HOME_INTERCEPTION_ACTIVE = false`.
+    *   **Crucial:** `HomeActivity` handles logic. If Interception is OFF, it must fallback to: Both (if both slots set) / Top (if only top) / Bottom (if only bottom).
+*   **Step B3:** Set Default Home -> `Settings.ACTION_HOME_SETTINGS`.
 
-### **Important State Variables:**
+**3. ADVANCED Mode (Full Suite):**
+*   **Step A1:** Notification Permission.
+*   **Step A2:** Accessibility Service (Link to Settings).
+    *   *Explanation:* Required for Gestures, DSS (Back/Bouncer), and reacting to screenshots.
+*   **Step A3:** Top/Bottom Home Selection.
+*   **Step A4:** Gesture Setup (Reuse existing UI).
+    *   *Commit:* If valid, set `HOME_INTERCEPTION_ACTIVE = true` (buffered).
+*   **Step A5:** DualShot Setup.
+    *   Toggle "Enable DualShot now?". If Yes -> `dss_auto_stitch = true`.
+    *   *Note:* Storage permission will be requested by system when tile activates.
+*   **Step A6:** Set Default Home.
 
-* topApp / bottomApp
-* showAllApps
-* mainScreen
-* gesture preferences (single/double/triple/long)
-* customDoubleTapDelay + useSystemDelay
+**4. NO HOME Mode:**
+*   Exit flow immediately.
 
-### **Pitfalls Encountered:**
-
-* Compose imports broke after version changes.
-* ConstraintLayout changed APIs (createGuidelineFromStart vs createVerticalGuideline).
-* Dropdowns were invisible due to `.size(1.dp)` mistakenly applied.
-* Image icons showed as white silhouettes due to wrong Drawable source.
-* SharedUI has become extremely large; should be broken into feature modules.
-
----
-
-# 7. `AppQueryHelper.kt` – App Metadata & Icon Cache
-
-### **Responsibility:**
-
-* Retrieves installed apps.
-* Extracts labels, icons, package names.
-* Provides filtered (launcher‑only) and unfiltered lists.
-
-### **Key Behaviors:**
-
-* Maintains a **global in‑memory icon cache** via `companion object`.
-* queryLauncherApps(): returns only apps with LAUNCHER category.
-* queryAllApps(): returns all launchable apps.
-* prewarmAllApps(): loads all icons on background thread at startup.
-
-### **Pitfalls Encountered:**
-
-* Getting icons on demand caused 4‑second hangs.
-* Must use `pm.getApplicationIcon(pkg)` instead of masking activity icons.
-* LaunchIntent icons were white masks.
-
-### **Result After Fixes:**
-
-* App list loads instantly after prewarm.
-* Icons are full color, not silhouettes.
+## 4.2 SharedUI Refactor (Target: v0.3.0)
+*   **Goal:** Break `SharedUI.kt` into modular `settings/` package components.
+*   **Concept:** Introduce `SettingsMenuScaffold`.
+*   **Status:** Postponed to v0.3.0 to prioritize stability.
 
 ---
 
-# 8. SharedPreferences Keys (`Constants.kt`)
+# 5. Pitfalls & Lessons Learned
 
-### **Responsibility:**
-
-* All preference keys live here.
-* Must be used **everywhere**, never hardcoded.
-
-### **Common Keys:**
-
-* KEY_TOP_APP
-* KEY_BOTTOM_APP
-* KEY_MAIN_SCREEN
-* KEY_SHOW_ALL_APPS
-* KEY_SINGLE_HOME_ACTION
-* KEY_DOUBLE_HOME_ACTION
-* KEY_TRIPLE_HOME_ACTION
-* KEY_LONG_HOME_ACTION
-* KEY_CUSTOM_DOUBLE_TAP_DELAY
-* KEY_USE_SYSTEM_DOUBLE_TAP_DELAY
-* KEY_AUTO_BOOT_BOTH_HOME
-
-### **Pitfalls Avoided:**
-
-* Hardcoded keys broke gesture selection entirely.
-* Now all access must use constants.
+1.  **MediaProjection on Thor:** Banned. It mirrors the main screen when targeting the secondary screen.
+2.  **Separate Processes:** Do not run Services in `:keepalive` process. It breaks SharedPreferences synchronization.
+3.  **Activity Icons:** Use `pm.getApplicationIcon(pkg)` instead of ActivityInfo icons to avoid white masks.
+4.  **Blind Refactoring:** Never modify `SharedUI.kt` without understanding the full state tree.
+5.  **Focus:** Overlays cannot steal focus reliable. Use `FocusStealerActivity`.
 
 ---
 
-# 9. Dual Screenshot Strategy (Advanced)
-
-### **Core Constraint:**
-
-* `MediaProjection` API is **banned** for this feature because the AYN Thor hardware mirrors display 0 when attempting to project display 1.
-
-### **Implementation:**
-
-* **Root (su):** Uses `screencap -d <id>` via shell.
-* **Shizuku:** Uses `Shizuku.newProcess("screencap ...")` via ADB shell.
-* **Feature Visibility:** The UI action ("Dual Screenshot") is hidden unless one of these capabilities is detected.
-* **Architecture:** Relies on `ShellInterface`, `AccessManager`, and `ScreenshotUtil` abstraction to isolate the capture method from the service logic.
-
----
-
-# 🛑 Major Pitfalls to Avoid (Critical Observations)
-
-### ❌ 1. Never modify SharedUI.kt blindly
-
-It is large, fragile, and contains stateful Compose logic. Poor changes break everything.
-
-### ❌ 2. Never downgrade Compose BOM unless absolutely necessary
-
-Doing so destroyed many imports and APIs.
-
-### ❌ 3. Always back up `.idea/` and `gradle/` before nuking workspace
-
-We learned this the hard way.
-
-### ❌ 4. Never rely on activity-specific icons
-
-Use `pm.getApplicationIcon(pkg)` to avoid white mask icons.
-
-### ❌ 5. Never put blocking operations inside Composable functions
-
-App list queries must be cached and prewarmed.
-
-### ❌ 6. Never use MediaProjection for Secondary Displays on Thor
-
-It will result in a mirrored image of the primary display. Use Shell/Root capture instead.
-
----
-
-# 🧠 Behavioral Summary of Gesture System
-
-### Single Home → user‑mapped action
-
-### Double Home → user‑mapped action
-
-### Triple Home → user‑mapped action
-
-### Long Home → user‑mapped action
-
-Mapping stored in SharedPreferences.
-
-Gesture detection in AccessibilityService uses timestamps.
-
-Launch logic delegated to HomeActionLauncher.
-
----
-
-# 📱 Dual Screen Launching Summary
-
-* Uses `DisplayManager` to detect displays 0 and 1.
-* Launching app on display 1 triggers dual‑screen behavior.
-* Some apps may cause screen swapping if launched in opposite display (AYN Thor behavior).
-* Dual launch order depends on `mainScreen` preference.
-
----
-
-# 💾 Volatile Icon Cache Summary
-
-### Cache type:
-
-In‑memory, process‑bound, via `companion object`.
-
-### Lifespan:
-
-* survives UI swipes
-* survives backgrounding
-* survives user switching apps
-* dies only when process dies
-
-### Prewarm:
-
-Runs on app startup in background thread.
-
----
-
-# 🧱 Refactor Suggestions (Future Safe)
-
-### 1. Break SharedUI.kt into feature modules:
-
-* HomeLauncher UI
-* Gesture UI
-* Delay slider UI
-* App dropdown UI
-* App card UI
-
-### 2. Extract state machines from UI files
-
-Compose should not manage gesture business logic.
-
-### 3. Add ViewModel for Home Launcher settings
-
-Would simplify state and reduce recomposition.
-
-### 4. Move AppQueryHelper icon cache into dedicated IconRepository
-
-For clean architecture.
-
-### 5. Create a performance test harness
-
-Test prewarm timing on cold/warm starts.
-
----
-
-# 🧭 Closing Summary (What an AI should know when helping)
-
-Mjolnir is a dual‑screen launcher that:
-
-* intercepts the Home button
-* maps gestures to actions
-* launches separate apps on top/bottom screens
-* uses a KeepAliveService to keep process alive
-* builds and prewarms an icon cache
-* renders UI with Compose + ConstraintLayout
-
-The largest technical risks are:
-
-* incorrect Compose imports
-* unstable alpha ConstraintLayout versions
-* SharedUI over‑complexity
-* android manifest misconfiguration
-* **Hardware display mirroring** preventing standard screenshot APIs
-
-Any future AI working with this project should:
-
-* ask before modifying SharedUI
-* never change BOM version without reviewing entire dependency tree
-* always check Constants.kt before modifying preference use
-* respect dual‑display launch constraints
-* treat prewarm behavior as essential
-* **Use Root/Shizuku for screenshots, never MediaProjection**
-
----
-
-This summary captures the system as accurately as possible without including raw code. It should be enough for an AI or human to re‑engage this project without relearning the entire system from scratch.
+*End of Specification*

@@ -1,11 +1,16 @@
 package xyz.blacksheep.mjolnir
 
+import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.content.pm.ResolveInfo
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.core.content.edit
+import xyz.blacksheep.mjolnir.onboarding.OnboardingActivity
 import xyz.blacksheep.mjolnir.settings.MainScreen
 import xyz.blacksheep.mjolnir.settings.getLaunchableApps
 import xyz.blacksheep.mjolnir.utils.DualScreenLauncher
@@ -15,22 +20,18 @@ class HomeActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+
+        if (!isConfigurationValid()) {
+            wipeConfigAndLaunchOnboarding()
+            return
+        }
+
         val failureCount = prefs.getInt(KEY_LAUNCH_FAILURE_COUNT, 0)
 
         if (failureCount >= 3) {
-            // Too many failures, open settings so user can fix it.
-            // We do NOT wipe the configuration anymore, as that is frustrating.
-            prefs.edit {
-                putInt(KEY_LAUNCH_FAILURE_COUNT, 0)
-            }
-            Toast.makeText(this, "Repeated launch failures. Opening Mjolnir settings.", Toast.LENGTH_LONG).show()
-            
-            // Redirect to Mjolnir Settings instead of System Home Settings
-            val intent = Intent(this, MainActivity::class.java).apply {
-                putExtra("open_settings", true)
-            }
-            startActivity(intent)
-            finish()
+            prefs.edit { putInt(KEY_LAUNCH_FAILURE_COUNT, 0) }
+            Toast.makeText(this, "Repeated launch failures. Resetting configuration.", Toast.LENGTH_LONG).show()
+            wipeConfigAndLaunchOnboarding()
             return
         }
 
@@ -39,16 +40,13 @@ class HomeActivity : ComponentActivity() {
         val showAllApps = prefs.getBoolean(KEY_SHOW_ALL_APPS, false)
         val mainScreen = MainScreen.valueOf(prefs.getString(KEY_MAIN_SCREEN, MainScreen.TOP.name) ?: MainScreen.TOP.name)
 
-        // Updated Logic: Only need ONE app to be set
         if (topAppPkg != null || bottomAppPkg != null) {
             val launcherApps = getLaunchableApps(this, showAllApps)
 
-            // SPECIAL CASE: Only 1 app is set
             if (topAppPkg == null || bottomAppPkg == null) {
                  val targetPkg = topAppPkg ?: bottomAppPkg
                  val appToLaunch = launcherApps.find { it.packageName == targetPkg }
                  if (appToLaunch != null) {
-                     // Launch single app on the main screen
                      if (mainScreen == MainScreen.TOP) {
                          DualScreenLauncher.launchOnTop(this, appToLaunch.launchIntent)
                      } else {
@@ -60,7 +58,6 @@ class HomeActivity : ComponentActivity() {
                       launchSettings()
                  }
             } else {
-                // BOTH apps are set
                 val topApp = launcherApps.find { it.packageName == topAppPkg }
                 val bottomApp = launcherApps.find { it.packageName == bottomAppPkg }
 
@@ -77,9 +74,62 @@ class HomeActivity : ComponentActivity() {
                 }
             }
         } else {
-            // NO apps are set
             launchSettings()
         }
+        finish()
+    }
+
+    private fun isConfigurationValid(): Boolean {
+        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val isInterceptionActive = prefs.getBoolean(KEY_HOME_INTERCEPTION_ACTIVE, false)
+        val topApp = prefs.getString(KEY_TOP_APP, null)
+        val bottomApp = prefs.getString(KEY_BOTTOM_APP, null)
+        val SPECIAL_HOME_APPS = setOf("com.android.launcher3", "com.odin.odinlauncher")
+
+        if (topApp == null && bottomApp == null) return false
+
+        if (isInterceptionActive) {
+            if (!isAccessibilityServiceEnabled()) return false
+
+            if (topApp in SPECIAL_HOME_APPS) {
+                val defaultHome = getCurrentDefaultHomePackage(this)
+                if (defaultHome != topApp) return false
+            }
+        }
+
+        return true
+    }
+
+    private fun getCurrentDefaultHomePackage(context: Context): String? {
+        val pm = context.packageManager
+        val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+        val resolveInfo: ResolveInfo? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            pm.resolveActivity(intent, PackageManager.ResolveInfoFlags.of(PackageManager.MATCH_DEFAULT_ONLY.toLong()))
+        } else {
+            @Suppress("DEPRECATION")
+            pm.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)
+        }
+        return resolveInfo?.activityInfo?.packageName
+    }
+
+    private fun isAccessibilityServiceEnabled(): Boolean {
+        val service = "${packageName}/${HomeKeyInterceptorService::class.java.canonicalName}"
+        return try {
+            val enabledServices = Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)
+            enabledServices?.contains(service, ignoreCase = true) == true
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    private fun wipeConfigAndLaunchOnboarding() {
+        Toast.makeText(this, "Mjolnir config invalid, resetting.", Toast.LENGTH_LONG).show()
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit {
+            remove(KEY_TOP_APP)
+            remove(KEY_BOTTOM_APP)
+            remove(KEY_HOME_INTERCEPTION_ACTIVE)
+        }
+        startActivity(Intent(this, OnboardingActivity::class.java))
         finish()
     }
 

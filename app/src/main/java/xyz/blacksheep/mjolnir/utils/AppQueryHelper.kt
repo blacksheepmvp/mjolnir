@@ -36,7 +36,7 @@ class AppQueryHelper(private val context: Context) {
      * Retrieves the current set of blacklisted package names from SharedPreferences.
      *
      * If no blacklist is found (key missing), it initializes the preference with a default set
-     * of apps (Quickstep, Settings, Odin Launcher) and returns that set.
+     * of apps (Settings, Mjolnir itself) and returns that set.
      * This ensures that the UI (which reads the pref directly) sees the defaults on a fresh install.
      */
     private fun getBlacklist(): Set<String> {
@@ -45,9 +45,8 @@ class AppQueryHelper(private val context: Context) {
         // Explicitly check for key existence to distinguish "uninitialized" from "user cleared"
         if (!prefs.contains(KEY_APP_BLACKLIST)) {
             val defaultBlacklist = setOf(
-                "com.android.launcher3",
                 "com.android.settings",
-                "com.odin.odinlauncher"
+                context.packageName // Add Mjolnir itself to the blacklist
             )
             // Initialize the preference on disk so other components (e.g. Settings UI) see the correct state
             prefs.edit().putStringSet(KEY_APP_BLACKLIST, defaultBlacklist).apply()

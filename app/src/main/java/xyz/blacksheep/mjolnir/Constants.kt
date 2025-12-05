@@ -45,6 +45,11 @@ const val KEY_DSS_PROJECTION_DATA = "dss_projection_data"
 const val KEY_DSS_AUTO_STITCH = "dss_auto_stitch"
 
 /**
+ * Boolean preference key indicating if the onboarding flow has been completed or skipped.
+ */
+const val KEY_ONBOARDING_COMPLETE = "onboarding_complete"
+
+/**
  * Intent action for deleting the source (bottom) screenshot from the result notification.
  */
 const val ACTION_DELETE_SOURCE = "xyz.blacksheep.mjolnir.ACTION_DELETE_SOURCE"

@@ -13,6 +13,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -83,7 +84,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
@@ -259,22 +259,33 @@ sealed interface UiState {
 @Composable
 fun AppSlotCard(
     modifier: Modifier = Modifier,
-    app: LauncherApp?,              // null = no selection yet
-    label: String,                  // "Top Screen App", "Bottom Screen App"
-    onClick: () -> Unit             // triggers drop-down
+    app: LauncherApp?,
+    label: String,
+    onClick: () -> Unit,
+    // New optional params for styling
+    backgroundColor: Color = MaterialTheme.colorScheme.surfaceVariant,
+    contentColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+    shape: androidx.compose.ui.graphics.Shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp)
 ) {
-    val bgColor = MaterialTheme.colorScheme.surfaceVariant
-    val contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+    val borderModifier = if (backgroundColor.alpha < 1f) {
+        Modifier.border(
+            width = 1.dp,
+            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
+            shape = shape
+        )
+    } else {
+        Modifier
+    }
 
     Surface(
         modifier = modifier
-            .fillMaxWidth()
-            .height(120.dp)
-            .clip(RoundedCornerShape(16.dp))
+            .then(borderModifier)
             .clickable { onClick() },
-        color = bgColor,
-        tonalElevation = 3.dp,
-        shadowElevation = 4.dp
+        shape = shape,
+        color = backgroundColor,
+        contentColor = contentColor,
+        tonalElevation = if (backgroundColor.alpha < 1f) 0.dp else 3.dp,
+        shadowElevation = if (backgroundColor.alpha < 1f) 0.dp else 4.dp,
     ) {
         Box(
             modifier = Modifier.fillMaxSize(),
@@ -286,14 +297,14 @@ fun AppSlotCard(
                     Icon(
                         imageVector = Icons.Default.Add,
                         contentDescription = null,
-                        tint = contentColor,
                         modifier = Modifier.size(36.dp)
                     )
                     Spacer(Modifier.height(8.dp))
                     Text(
                         text = label,
                         color = contentColor,
-                        style = MaterialTheme.typography.bodyLarge
+                        style = MaterialTheme.typography.bodyLarge,
+                        textAlign = TextAlign.Center
                     )
                 }
             } else {
@@ -584,16 +595,31 @@ fun SettingsScreen(
     mainScreen: MainScreen,
     onMainScreenChange: (MainScreen) -> Unit
 ) {
+    // Add this new block
+    val context = LocalContext.current
+    LaunchedEffect(Unit) {
+        DiagnosticsLogger.logEvent("SettingsScreen", "LIFECYCLE", "Composition START", context)
+    }
+
     val navController = rememberNavController()
 
+    // Add this block for lifecycle tracking
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        onDispose {
+            DiagnosticsLogger.logEvent("SettingsScreen", "LIFECYCLE", "Composition END", context)
+        }
+    }
+
     BackHandler {
-        if (navController.previousBackStackEntry != null) {
+        val hasBackStack = navController.previousBackStackEntry != null
+        DiagnosticsLogger.logEvent("SettingsScreen", "BACK_PRESSED", "hasStack=$hasBackStack", context)
+
+        if (hasBackStack) {
             navController.popBackStack()
         } else {
             onClose()
         }
     }
-
     /**
      * Internal navigation graph defining all available settings routes.
      *
@@ -621,7 +647,7 @@ fun SettingsScreen(
      * - Because the settings system is large and stateful, each screen should
      *   avoid heavy recomposition and rely on remembered state where needed.
      */
-    NavHost(navController = navController, startDestination = startDestination) {
+    NavHost(modifier = Modifier.fillMaxSize(), navController = navController, startDestination = startDestination) {
         composable("main") {
             MainSettingsScreen(navController = navController, onClose = onClose)
         }
@@ -1494,27 +1520,29 @@ private fun HomeLauncherSettingsMenu(
 
                                 ExposedDropdownMenu(
                                     expanded = bottomExpanded,
-                                    onDismissRequest = { bottomExpanded = false }
-                                ) {
-                                    launcherApps.forEach { app ->
-                                        DropdownMenuItem(
-                                            text = { Text(app.label) },
-                                            leadingIcon = {
-                                                Image(
-                                                    painter = rememberDrawablePainter(app.launchIntent.getPackageIcon()),
-                                                    contentDescription = null,
-                                                    modifier = Modifier.size(24.dp)
-                                                )
-                                            },
-                                            onClick = {
-                                                onAppSelectRequest(
-                                                    pkg = app.packageName,
-                                                    isTop = false
-                                                )
-                                                bottomExpanded = false
-                                            }
-                                        )
-                                    }
+                                    onDismissRequest = { bottomExpanded = false } ) {
+                                    // MANUAL CHANGE: Filter out special apps (Quickstep/Odin) from the Bottom slot
+                                    launcherApps
+                                        .filterNot { it.packageName in SPECIAL_HOME_APPS }
+                                        .forEach { app ->
+                                            DropdownMenuItem(
+                                                text = { Text(app.label) },
+                                                leadingIcon = {
+                                                    Image(
+                                                        painter = rememberDrawablePainter(app.launchIntent.getPackageIcon()),
+                                                        contentDescription = null,
+                                                        modifier = Modifier.size(24.dp)
+                                                    )
+                                                },
+                                                onClick = {
+                                                    onAppSelectRequest(
+                                                        pkg = app.packageName,
+                                                        isTop = false
+                                                    )
+                                                    bottomExpanded = false
+                                                }
+                                            )
+                                        }
                                 }
                             }
                         }

@@ -12,6 +12,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
+import android.content.pm.ResolveInfo
 import android.database.ContentObserver
 import android.hardware.display.DisplayManager
 import android.net.Uri
@@ -28,6 +29,7 @@ import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
+import androidx.core.content.edit
 import xyz.blacksheep.mjolnir.EXTRA_SOURCE_URI
 import xyz.blacksheep.mjolnir.HomeKeyInterceptorService
 import xyz.blacksheep.mjolnir.KEY_BOTTOM_APP
@@ -38,6 +40,7 @@ import xyz.blacksheep.mjolnir.MainActivity
 import xyz.blacksheep.mjolnir.MjolnirApp
 import xyz.blacksheep.mjolnir.PREFS_NAME
 import xyz.blacksheep.mjolnir.R
+import xyz.blacksheep.mjolnir.onboarding.OnboardingActivity
 import xyz.blacksheep.mjolnir.utils.DiagnosticsConfig
 import xyz.blacksheep.mjolnir.utils.DiagnosticsLogger
 import xyz.blacksheep.mjolnir.utils.DualScreenshotManager
@@ -81,28 +84,29 @@ class KeepAliveService : Service(), SharedPreferences.OnSharedPreferenceChangeLi
         val extras = intent?.extras?.keySet()?.joinToString(",") ?: "none"
         DiagnosticsLogger.logEvent("KeepAlive", "ON_START_COMMAND", "action=$action extras=[$extras]", this)
 
-        // Handle explicit refresh request
+        if (action == ACTION_TOGGLE_INTERCEPTION) {
+            val currentStatus = prefs.getBoolean(KEY_HOME_INTERCEPTION_ACTIVE, false)
+            prefs.edit { putBoolean(KEY_HOME_INTERCEPTION_ACTIVE, !currentStatus) }
+            return START_STICKY
+        }
+
         if (action == ACTION_REFRESH_OBSERVER) {
             DiagnosticsLogger.logEvent("Service", "ACTION_REFRESH_OBSERVER_RECEIVED", context = this)
             refreshDssState()
         }
 
-        // Handle explicit status update request (from HomeKeyInterceptorService)
         if (action == ACTION_UPDATE_STATUS) {
             DiagnosticsLogger.logEvent("Service", "ACTION_UPDATE_STATUS_RECEIVED", context = this)
             startForegroundInternal()
         }
         
-        // Handle Dual Screenshot Action (Manual Trigger)
         if (action == ACTION_DUAL_SCREENSHOT) {
             DiagnosticsLogger.logEvent("Service", "ACTION_DUAL_SCREENSHOT_RECEIVED", context = this)
             DualScreenshotManager.start(this)
-            // Re-post the notification to ensure it remains consistent
             startForegroundInternal()
             return START_STICKY
         }
 
-        // Handle Delete Screenshot Action
         if (action == ACTION_DELETE_SCREENSHOT) {
             val uri = intent?.data
             val notificationId = intent?.getIntExtra(EXTRA_NOTIFICATION_ID, -1) ?: -1
@@ -120,19 +124,14 @@ class KeepAliveService : Service(), SharedPreferences.OnSharedPreferenceChangeLi
                     Toast.makeText(this, "Failed to delete screenshot", Toast.LENGTH_SHORT).show()
                 }
             }
-            // We don't need to update the foreground notification for this action
             return START_STICKY
         }
 
-        // Service does no work; it only exists to keep the process alive.
-        // START_STICKY ensures it restarts if the system kills it.
-        // We also update notification here in case service was restarted or state changed
         startForegroundInternal()
         return START_STICKY
     }
 
     override fun onBind(intent: Intent?): IBinder? {
-        // Not a bound service.
         return null
     }
 
@@ -155,75 +154,80 @@ class KeepAliveService : Service(), SharedPreferences.OnSharedPreferenceChangeLi
             val restartIntent = Intent(applicationContext, KeepAliveService::class.java)
             restartIntent.setPackage(packageName)
             
-            // Use getForegroundService on O+ to ensure we can restart from background
             val pendingIntent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                PendingIntent.getForegroundService(
-                    this, 1, restartIntent, PendingIntent.FLAG_IMMUTABLE
-                )
+                PendingIntent.getForegroundService(this, 1, restartIntent, PendingIntent.FLAG_IMMUTABLE)
             } else {
-                PendingIntent.getService(
-                    this, 1, restartIntent, PendingIntent.FLAG_IMMUTABLE
-                )
+                PendingIntent.getService(this, 1, restartIntent, PendingIntent.FLAG_IMMUTABLE)
             }
             
             val alarmManager = getSystemService(Context.ALARM_SERVICE) as AlarmManager
-            
-            // Use set() instead of setExact() to avoid SecurityException on Android 12+ 
-            // if SCHEDULE_EXACT_ALARM permission is missing.
-            alarmManager.set(
-                AlarmManager.ELAPSED_REALTIME,
-                SystemClock.elapsedRealtime() + 2000, // 2s delay
-                pendingIntent
-            )
+            alarmManager.set(AlarmManager.ELAPSED_REALTIME, SystemClock.elapsedRealtime() + 2000, pendingIntent)
         } catch (e: Exception) {
             DiagnosticsLogger.logException("Service", e, this)
         }
     }
 
     override fun onSharedPreferenceChanged(sharedPreferences: SharedPreferences?, key: String?) {
-        // Update notification if relevant keys change
-        if (key == KEY_HOME_INTERCEPTION_ACTIVE || 
-            key == KEY_TOP_APP || 
-            key == KEY_BOTTOM_APP ||
-            key == xyz.blacksheep.mjolnir.utils.KEY_DIAGNOSTICS_ENABLED) {
-            
+        if (key == KEY_HOME_INTERCEPTION_ACTIVE || key == KEY_TOP_APP || key == KEY_BOTTOM_APP || key == xyz.blacksheep.mjolnir.utils.KEY_DIAGNOSTICS_ENABLED) {
             startForegroundInternal()
         }
         
-        // Re-register observer if DSS setting changed (to ensure permissions are picked up)
         if (key == KEY_DSS_AUTO_STITCH) {
             refreshDssState()
         }
     }
 
     private fun refreshDssState() {
-        // Reload from disk to ensure we have the latest committed value from DssPermissionActivity
-        // Although shared prefs are usually cached in memory, reload() forces a check
-        // if multiple processes were involved (unlikely here, but safe).
-        // However, SharedPreferences are single-process singleton mostly.
-        
         val dssEnabled = prefs.getBoolean(KEY_DSS_AUTO_STITCH, false)
         val hasPermission = hasStoragePermission()
         DiagnosticsLogger.logEvent("KeepAlive", "REFRESH_DSS_STATE", "dssEnabled=$dssEnabled permission=$hasPermission", this)
         
         if (dssEnabled && hasPermission) {
-             DiagnosticsLogger.logEvent("Service", "DSS_STATE_REFRESH", "status=ACTIVE", this)
-             // Only re-register if not already registered to avoid churn? 
-             // Actually, registerScreenshotObserver handles idempotency by unregistering first.
              registerScreenshotObserver()
         } else {
-             DiagnosticsLogger.logEvent("Service", "DSS_STATE_REFRESH", "status=INACTIVE dss=$dssEnabled perm=$hasPermission", this)
              unregisterScreenshotObserver()
         }
     }
 
     private fun hasStoragePermission(): Boolean {
-        val permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            Manifest.permission.READ_MEDIA_IMAGES
-        } else {
-            Manifest.permission.READ_EXTERNAL_STORAGE
-        }
+        val permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) Manifest.permission.READ_MEDIA_IMAGES else Manifest.permission.READ_EXTERNAL_STORAGE
         return ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
+    }
+
+    /**
+     * A check to determine if the current Mjolnir configuration is valid.
+     * @return `true` if the configuration is valid, `false` otherwise.
+     */
+    private fun isConfigurationValid(): Boolean {
+        val isInterceptionActive = prefs.getBoolean(KEY_HOME_INTERCEPTION_ACTIVE, false)
+        val topApp = prefs.getString(KEY_TOP_APP, null)
+        val bottomApp = prefs.getString(KEY_BOTTOM_APP, null)
+        val SPECIAL_HOME_APPS = setOf("com.android.launcher3", "com.odin.odinlauncher")
+
+        if (topApp == null && bottomApp == null) return false
+
+        if (isInterceptionActive) {
+            if (!isAccessibilityServiceEnabled(this)) return false
+
+            if (topApp in SPECIAL_HOME_APPS) {
+                val defaultHome = getCurrentDefaultHomePackage(this)
+                if (defaultHome != topApp) return false
+            }
+        }
+
+        return true
+    }
+
+    private fun getCurrentDefaultHomePackage(context: Context): String? {
+        val pm = context.packageManager
+        val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+        val resolveInfo: ResolveInfo? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            pm.resolveActivity(intent, PackageManager.ResolveInfoFlags.of(PackageManager.MATCH_DEFAULT_ONLY.toLong()))
+        } else {
+            @Suppress("DEPRECATION")
+            pm.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)
+        }
+        return resolveInfo?.activityInfo?.packageName
     }
 
     /**
@@ -231,76 +235,95 @@ class KeepAliveService : Service(), SharedPreferences.OnSharedPreferenceChangeLi
      * The notification text reflects the current status of the Home Button Interceptor.
      */
     private fun startForegroundInternal() {
-        val pendingIntent: PendingIntent =
-            Intent(this, MainActivity::class.java).let { notificationIntent ->
-                PendingIntent.getActivity(this, 0, notificationIntent,
-                    PendingIntent.FLAG_IMMUTABLE)
+        val pendingIntent: PendingIntent = Intent(this, MainActivity::class.java).let { notificationIntent ->
+            PendingIntent.getActivity(this, 0, notificationIntent, PendingIntent.FLAG_IMMUTABLE)
+        }
+
+        val isAdvancedModeReady = isAccessibilityServiceEnabled(this) && hasNotificationPermission()
+        val isToggleEnabled = prefs.getBoolean(KEY_HOME_INTERCEPTION_ACTIVE, false)
+        val isValid = isConfigurationValid()
+        val currentDefaultHome = getCurrentDefaultHomePackage(this)
+        val isMjolnirDefault = currentDefaultHome?.contains(packageName) == true
+
+        val contentTitle: String
+        val notificationAction: NotificationCompat.Action?
+        val notificationPriority: Int
+        val clickIntent: PendingIntent
+
+        when {
+            !isValid -> {
+                contentTitle = "Invalid Mjolnir Configuration"
+                notificationAction = null
+                notificationPriority = NotificationCompat.PRIORITY_HIGH
+                clickIntent = Intent(this, OnboardingActivity::class.java).let {
+                    PendingIntent.getActivity(this, 0, it, PendingIntent.FLAG_IMMUTABLE)
+                }
             }
-
-        // Dual Screenshot Action Intent
-        val dssIntent = Intent(this, KeepAliveService::class.java).apply {
-            action = ACTION_DUAL_SCREENSHOT
-        }
-        val dssPendingIntent = PendingIntent.getService(
-            this, 2, dssIntent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-        )
-
-        // Gather state
-        val tileEnabled = prefs.getBoolean(KEY_HOME_INTERCEPTION_ACTIVE, false)
-        val serviceRunning = isAccessibilityServiceEnabled(this)
-        val topApp = prefs.getString(KEY_TOP_APP, null)
-        val bottomApp = prefs.getString(KEY_BOTTOM_APP, null)
-        val diagnosticsEnabled = DiagnosticsConfig.isEnabled(this)
-
-        DiagnosticsLogger.logEvent("KeepAlive", "START_FOREGROUND_INTERNAL", "tile=$tileEnabled service=$serviceRunning", this)
-        
-        // Determine if home config is complete (at least one app set)
-        val homeConfigComplete = (topApp != null || bottomApp != null)
-
-        // Determine Title
-        val contentTitle = when {
-            !homeConfigComplete -> "Home app not configured."
-            tileEnabled && serviceRunning -> "Home button capture ENABLED."
-            !serviceRunning -> "Home button capture service DISABLED. Tap to open Mjolnir."
-            !tileEnabled && serviceRunning -> "Home button capture DISABLED."
-            else -> "Mjolnir Service Active" // Fallback
+            !isToggleEnabled && isValid && isMjolnirDefault -> {
+                contentTitle = "Mjolnir Home Basic is active."
+                notificationAction = createToggleAction("Enable Advanced")
+                notificationPriority = NotificationCompat.PRIORITY_LOW
+                clickIntent = pendingIntent
+            }
+            isAdvancedModeReady && isToggleEnabled -> {
+                contentTitle = "Mjolnir Home Advanced is active."
+                notificationAction = createToggleAction("Disable")
+                notificationPriority = NotificationCompat.PRIORITY_LOW
+                clickIntent = pendingIntent
+            }
+            else -> { 
+                contentTitle = "Mjolnir Home is inactive."
+                notificationAction = createToggleAction("Enable")
+                notificationPriority = NotificationCompat.PRIORITY_DEFAULT
+                clickIntent = pendingIntent
+            }
         }
 
-        // Determine Text
-        val contentText = if (diagnosticsEnabled) {
-            "Diagnostic data is being collected locally. Tap to open Mjolnir."
+        val contentText = if (isValid) {
+            if (DiagnosticsConfig.isEnabled(this)) "Diagnostic data is being collected locally. Tap to open Mjolnir." else "Tap to open Mjolnir."
         } else {
-            "Tap to open Mjolnir."
+            "Tap to fix configuration."
         }
 
-        val notification: Notification = NotificationCompat.Builder(this, MjolnirApp.PERSISTENT_CHANNEL_ID)
+        val builder = NotificationCompat.Builder(this, MjolnirApp.PERSISTENT_CHANNEL_ID)
             .setContentTitle(contentTitle)
             .setContentText(contentText)
             .setSmallIcon(R.drawable.ic_home)
-            .setContentIntent(pendingIntent)
+            .setContentIntent(clickIntent)
             .setOngoing(true)
             .setCategory(Notification.CATEGORY_SERVICE)
-            .setPriority(NotificationCompat.PRIORITY_LOW) // legacy devices
-            .addAction(R.drawable.ic_home, "Dual Screenshot", dssPendingIntent)
+            .setPriority(notificationPriority)
             .setSilent(true)
-            .build()
+
+        notificationAction?.let {
+            builder.addAction(it)
+        }
+
+        val notification: Notification = builder.build()
 
         try {
-            ServiceCompat.startForeground(
-                this,
-                NOTIFICATION_ID,
-                notification,
-                0 // No special foreground type; we don't use location/camera/etc.
-            )
-            // Only log if this is a fresh start or significant update to avoid spamming logs on every pref change if we called this more often
+            ServiceCompat.startForeground(this, NOTIFICATION_ID, notification, 0)
             DiagnosticsLogger.logEvent("Service", "KEEPALIVE_NOTIFICATION_SHOWN", "title=\"$contentTitle\"", this)
         } catch (e: Exception) {
             DiagnosticsLogger.logEvent("Error", "KEEPALIVE_NOTIFICATION_FAILED", "message=${e.message}", this)
         }
     }
 
+    private fun createToggleAction(title: String): NotificationCompat.Action {
+        val toggleIntent = Intent(this, KeepAliveService::class.java).apply { action = ACTION_TOGGLE_INTERCEPTION }
+        val pendingToggleIntent = PendingIntent.getService(this, 3, toggleIntent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        return NotificationCompat.Action.Builder(R.drawable.ic_home, title, pendingToggleIntent).build()
+    }
+
+    private fun hasNotificationPermission(): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+        } else {
+            true
+        }
+    }
+
     private fun stopForegroundInternal() {
-        // Remove notification and stop service.
         try {
             ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
             DiagnosticsLogger.logEvent("Service", "KEEPALIVE_NOTIFICATION_REMOVED", "reason=self_initiated", this)
@@ -330,18 +353,12 @@ class KeepAliveService : Service(), SharedPreferences.OnSharedPreferenceChangeLi
 
     private fun registerScreenshotObserver() {
         DiagnosticsLogger.logEvent("KeepAlive", "REGISTER_OBSERVER_START", null, this)
-        // Always create a fresh observer to ensure the Handler and Context are valid.
-        // If one exists, unregister it first.
         unregisterScreenshotObserver()
         
         DiagnosticsLogger.logEvent("KeepAlive", "REGISTER_OBSERVER_NEW_INSTANCE", null, this)
         screenshotObserver = ScreenshotObserver(Handler(Looper.getMainLooper()))
         try {
-            contentResolver.registerContentObserver(
-                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-                true,
-                screenshotObserver!!
-            )
+            contentResolver.registerContentObserver(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, true, screenshotObserver!!)
             DiagnosticsLogger.logEvent("Service", "OBSERVER_REGISTERED", context = this)
         } catch (e: Exception) {
             DiagnosticsLogger.logException("Service", e, this)
@@ -354,18 +371,11 @@ class KeepAliveService : Service(), SharedPreferences.OnSharedPreferenceChangeLi
             screenshotObserver?.let { contentResolver.unregisterContentObserver(it) }
             screenshotObserver = null
             DiagnosticsLogger.logEvent("Service", "OBSERVER_UNREGISTERED", context = this)
-        } catch (e: Exception) {
-            // e.g. not registered
-        }
+        } catch (e: Exception) { }
     }
 
     inner class ScreenshotObserver(handler: Handler) : ContentObserver(handler) {
         private var lastProcessedId: Long = -1L
-
-        override fun onChange(selfChange: Boolean) {
-             super.onChange(selfChange)
-             processChange(null)
-        }
 
         override fun onChange(selfChange: Boolean, uri: Uri?) {
             super.onChange(selfChange, uri)
@@ -373,33 +383,17 @@ class KeepAliveService : Service(), SharedPreferences.OnSharedPreferenceChangeLi
         }
         
         private fun processChange(uri: Uri?) {
-            // VERBOSE LOG START
             DiagnosticsLogger.logEvent("Observer", "ON_CHANGE", "uri=$uri", this@KeepAliveService)
             
             try {
-                // Double check since we might have unregistered but handler msg was already posted
                 if (!prefs.getBoolean(KEY_DSS_AUTO_STITCH, false)) {
                     DiagnosticsLogger.logEvent("Observer", "SKIPPED", "reason=dss_disabled", this@KeepAliveService)
                     return
                 }
 
-                val projection = arrayOf(
-                    MediaStore.Images.Media._ID,
-                    MediaStore.Images.Media.DATE_ADDED,
-                    MediaStore.Images.Media.RELATIVE_PATH,
-                    MediaStore.Images.Media.WIDTH,
-                    MediaStore.Images.Media.HEIGHT
-                )
-
+                val projection = arrayOf(MediaStore.Images.Media._ID, MediaStore.Images.Media.DATE_ADDED, MediaStore.Images.Media.RELATIVE_PATH, MediaStore.Images.Media.WIDTH, MediaStore.Images.Media.HEIGHT)
                 val sortOrder = "${MediaStore.Images.Media.DATE_ADDED} DESC"
-
-                val cursor = contentResolver.query(
-                    MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-                    projection,
-                    null,
-                    null,
-                    sortOrder
-                )
+                val cursor = contentResolver.query(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, projection, null, null, sortOrder)
                 
                 if (cursor == null) {
                     DiagnosticsLogger.logEvent("Observer", "QUERY_FAILED", "cursor=null (permissions?)", this@KeepAliveService)
@@ -410,44 +404,34 @@ class KeepAliveService : Service(), SharedPreferences.OnSharedPreferenceChangeLi
                     if (it.moveToFirst()) {
                         val idColumn = it.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
                         val dateColumn = it.getColumnIndexOrThrow(MediaStore.Images.Media.DATE_ADDED)
-                        val pathColumn = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                            it.getColumnIndexOrThrow(MediaStore.Images.Media.RELATIVE_PATH)
-                        } else {
-                            it.getColumnIndex(MediaStore.Images.Media.DATA)
-                        }
+                        val pathColumn = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) it.getColumnIndexOrThrow(MediaStore.Images.Media.RELATIVE_PATH) else it.getColumnIndex(MediaStore.Images.Media.DATA)
                         val wColumn = it.getColumnIndexOrThrow(MediaStore.Images.Media.WIDTH)
                         val hColumn = it.getColumnIndexOrThrow(MediaStore.Images.Media.HEIGHT)
 
                         val id = it.getLong(idColumn)
                         val dateAdded = it.getLong(dateColumn)
-                        
                         val relativePath = if (pathColumn != -1) it.getString(pathColumn) ?: "" else ""
                         val width = it.getInt(wColumn)
                         val height = it.getInt(hColumn)
 
-                        // LOG CANDIDATE
                         DiagnosticsLogger.logEvent("Observer", "CANDIDATE_FOUND", "id=$id path=$relativePath w=$width h=$height", this@KeepAliveService)
 
-                        // Debounce
                         if (id == lastProcessedId) {
                             DiagnosticsLogger.logEvent("Observer", "SKIPPED", "reason=debounce id=$id", this@KeepAliveService)
                             return
                         }
 
-                        // Time Check (5 seconds)
                         val now = System.currentTimeMillis() / 1000
                         if (now - dateAdded > 5) {
                             DiagnosticsLogger.logEvent("Observer", "SKIPPED", "reason=stale time_diff=${now - dateAdded}", this@KeepAliveService)
                             return
                         }
 
-                        // Path Check (Avoid loops)
                         if (relativePath.contains("Mjolnir")) {
                             DiagnosticsLogger.logEvent("Observer", "SKIPPED", "reason=loop_prevention", this@KeepAliveService)
                             return
                         }
 
-                        // Dimension Check (Target Bottom Display)
                         val dm = getSystemService(DisplayManager::class.java)
                         val displays = dm.displays
                         val bottomDisplay = displays.firstOrNull { d -> d.displayId != Display.DEFAULT_DISPLAY }
@@ -456,9 +440,7 @@ class KeepAliveService : Service(), SharedPreferences.OnSharedPreferenceChangeLi
                         if (bottomDisplay != null) {
                             val metrics = android.util.DisplayMetrics()
                             bottomDisplay.getRealMetrics(metrics)
-                            // Strict match logic
-                            if ((width == metrics.widthPixels && height == metrics.heightPixels) ||
-                                (width == metrics.heightPixels && height == metrics.widthPixels)) {
+                            if ((width == metrics.widthPixels && height == metrics.heightPixels) || (width == metrics.heightPixels && height == metrics.widthPixels)) {
                                 isMatch = true
                             } else {
                                 DiagnosticsLogger.logEvent("Observer", "SKIPPED", "reason=dim_mismatch candidate=${width}x${height} bottom=${metrics.widthPixels}x${metrics.heightPixels}", this@KeepAliveService)
@@ -469,10 +451,7 @@ class KeepAliveService : Service(), SharedPreferences.OnSharedPreferenceChangeLi
 
                         if (isMatch) {
                             lastProcessedId = id
-                            val contentUri = ContentUris.withAppendedId(
-                                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-                                id
-                            )
+                            val contentUri = ContentUris.withAppendedId(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, id)
 
                             DiagnosticsLogger.logEvent("KeepAlive", "DSS_TRIGGER", "id=$id", this@KeepAliveService)
 
@@ -502,6 +481,7 @@ class KeepAliveService : Service(), SharedPreferences.OnSharedPreferenceChangeLi
         const val ACTION_DELETE_SCREENSHOT = "xyz.blacksheep.mjolnir.ACTION_DELETE_SCREENSHOT"
         const val ACTION_REFRESH_OBSERVER = "xyz.blacksheep.mjolnir.ACTION_REFRESH_OBSERVER"
         const val ACTION_UPDATE_STATUS = "xyz.blacksheep.mjolnir.ACTION_UPDATE_STATUS"
+        const val ACTION_TOGGLE_INTERCEPTION = "xyz.blacksheep.mjolnir.ACTION_TOGGLE_INTERCEPTION"
         const val EXTRA_NOTIFICATION_ID = "extra_notification_id"
     }
 }

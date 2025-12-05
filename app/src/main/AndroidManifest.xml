@@ -20,6 +20,7 @@
     <uses-permission android:name="android.permission.VIBRATE" />
     <application
         android:name=".MjolnirApp"
+        android:enableOnBackInvokedCallback="true"
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
@@ -118,6 +119,16 @@
             android:excludeFromRecents="true"
             android:taskAffinity=""
             android:theme="@style/Theme.Mjolnir.FocusStealer" />
+
+        <activity
+            android:name=".onboarding.OnboardingActivity"
+            android:exported="false"
+            android:theme="@style/Theme.Mjolnir" />
+
+        <activity
+            android:name=".onboarding.AdvancedRequiredActivity"
+            android:exported="false"
+            android:theme="@style/Theme.Mjolnir.Transparent" />
 
         <service
             android:name=".MjolnirHomeTileService"

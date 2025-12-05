@@ -128,7 +128,8 @@ class HomeKeyInterceptorService : AccessibilityService(), SharedPreferences.OnSh
                 startService(intent)
             }
         }, 250)
-
+        
+        /*
         // Auto-run BOTH_HOME on boot if enabled
         try {
             val autoBootHome = prefs.getBoolean(KEY_AUTO_BOOT_BOTH_HOME, true)
@@ -141,6 +142,7 @@ class HomeKeyInterceptorService : AccessibilityService(), SharedPreferences.OnSh
         } catch (e: Exception) {
             DiagnosticsLogger.logException("Gesture", e, this)
         }
+        */
     }
 
     private fun performScreenSwap() {
@@ -339,6 +341,21 @@ class HomeKeyInterceptorService : AccessibilityService(), SharedPreferences.OnSh
 
     private fun performAction(action: Action) {
         DiagnosticsLogger.logEvent("Launcher", "PERFORM_ACTION_TRIGGERED", "action=$action", this)
+
+        // Notify KeepAliveService that a gesture was processed.
+        // This acts as a "liveness check" to refresh the notification status if it's stale (e.g. "Invalid Configuration").
+        val updateIntent = Intent(this, KeepAliveService::class.java).apply {            this.action = KeepAliveService.ACTION_UPDATE_STATUS // Use "this.action" to refer to the Intent's property
+        }
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(updateIntent)
+            } else {
+                startService(updateIntent)
+            }
+        } catch (e: Exception) {
+            DiagnosticsLogger.logEvent("Error", "FAILED_TO_SEND_UPDATE_STATUS", "msg=${e.message}", this)
+        }
+
         when (action) {
             Action.TOP_HOME -> actionLauncher.launchTop()
             Action.BOTTOM_HOME -> actionLauncher.launchBottom()
