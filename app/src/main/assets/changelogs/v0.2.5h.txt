@@ -1,0 +1,44 @@
+### **Features**
+
+* New **Onboarding 2.0** with clearer setup flow and improved reliability.
+* **DualShot**: When enabled, taking a bottom screenshot automatically captures + stitches the top screen.
+* Added **Basic Home Mode** for users who prefer a zero-permissions setup.
+* New **“Default Home”** action available for Home-button behavior.
+* **Quickstep** and **OdinLauncher** supported when used in allowed configurations.
+
+---
+
+### **UI / UX**
+
+* Updated onboarding screens with rewritten text and clearer guidance.
+* Home-Button Behavior screen changed from a list to a **2×4 grid** layout.
+* Action pickers now display **icons**, including app icons for Top/Bottom apps.
+* Improved **DualShot** status line with clearer “Active / Inactive” indicators.
+* Main menu updated:
+  • “Initialize Mjolnir Home” → **“Home Setup”**
+  • Tools reorganized for clarity
+* **Create Steam Files** now consolidates all Steam-related tools into one entry with a selection dialog.
+* Added **“What’s New”** info bubble at the bottom-center.
+* Small visual polish across menus, defaults, and toggles.
+
+---
+
+### **Bug Fixes**
+
+(Pre-existing issues resolved in this version)
+
+* Fixed Home-button actions occasionally targeting the wrong screen.
+* Quick tiles and persistent notification now stay in sync.
+* Default app blacklist now appears correctly on first load.
+* Fixed a case where Mjolnir required a restart after onboarding.
+* DualShot permission prompt now reliably appears when needed.
+* Fixed onboarding screens occasionally freezing or failing to reopen the menu.
+* Corrected behavior when returning from the system “Default Home” picker on the Thor.
+
+---
+
+### **Misc**
+
+* Diagnostics logging improved and made more consistent.
+* Added version-tracking preference for future update-notices.
+* Various stability, responsiveness, and performance improvements.

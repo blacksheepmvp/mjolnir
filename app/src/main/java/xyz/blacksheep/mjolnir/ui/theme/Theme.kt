@@ -3,6 +3,8 @@
 package xyz.blacksheep.mjolnir.ui.theme
 
 import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
 import android.os.Build
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
@@ -38,6 +40,20 @@ private val LightColorScheme = lightColorScheme(
     onSurface = Black,
 )
 
+/**
+ * The root theme Composable for the Mjolnir application.
+ *
+ * Applies the Material 3 design system with Mjolnir-specific overrides for colors and typography.
+ * Also handles system UI integration (status bar and navigation bar coloring).
+ *
+ * **Defaults:**
+ * - Forces Dark Mode by default (`darkTheme = true`).
+ * - Disables Dynamic Color (Monet) by default to maintain the app's specific aesthetic.
+ *
+ * @param darkTheme Whether to use the dark color scheme.
+ * @param dynamicColor Whether to use Android 12+ dynamic colors (wallpaper-based).
+ * @param content The Composable content to render within this theme.
+ */
 @Composable
 fun MjolnirTheme(
     darkTheme: Boolean = true, // Default to dark theme
@@ -54,27 +70,31 @@ fun MjolnirTheme(
         darkTheme -> DarkColorScheme
         else -> LightColorScheme
     }
-    //val view = LocalView.current
-    //if (!view.isInEditMode) {
-    //    val window = (view.context as Activity).window
-    //    window.statusBarColor = colorScheme.primary.toArgb()
-    //}
+
     val view = LocalView.current
     if (!view.isInEditMode) {
         // Use SideEffect to safely perform non-Compose operations
         SideEffect {
-            val window = (view.context as Activity).window
+            // Safe context unwrapping to find Activity
+            val activity = view.context.findActivity()
+            
+            activity?.window?.let { window ->
+                try {
+                    // 1. Set the system bar background color to match the theme's background
+                    window.statusBarColor = colorScheme.background.toArgb()
+                    window.navigationBarColor = colorScheme.background.toArgb()
 
-            // 1. Set the system bar background color to match the theme's background
-            window.statusBarColor = colorScheme.background.toArgb()
-            window.navigationBarColor = colorScheme.background.toArgb()
-
-            // 2. Control the appearance of the icons (CRITICAL for dark theme contrast)
-            WindowCompat.getInsetsController(window, view).apply {
-                // If NOT darkTheme (i.e., Light Mode), use dark icons for contrast.
-                // If darkTheme, icons will remain light.
-                isAppearanceLightStatusBars = !darkTheme
-                isAppearanceLightNavigationBars = !darkTheme
+                    // 2. Control the appearance of the icons (CRITICAL for dark theme contrast)
+                    WindowCompat.getInsetsController(window, view).apply {
+                        // If NOT darkTheme (i.e., Light Mode), use dark icons for contrast.
+                        // If darkTheme, icons will remain light.
+                        isAppearanceLightStatusBars = !darkTheme
+                        isAppearanceLightNavigationBars = !darkTheme
+                    }
+                } catch (e: Exception) {
+                    // Ignore errors when setting window properties (common on secondary displays or specific ROMs)
+                    e.printStackTrace()
+                }
             }
         }
     }
@@ -84,4 +104,14 @@ fun MjolnirTheme(
         typography = Typography,
         content = content
     )
+}
+
+// Extension function to safely find the Activity from a Context
+private fun Context.findActivity(): Activity? {
+    var context = this
+    while (context is ContextWrapper) {
+        if (context is Activity) return context
+        context = context.baseContext
+    }
+    return null
 }

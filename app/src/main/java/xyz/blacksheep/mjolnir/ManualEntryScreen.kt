@@ -54,6 +54,21 @@ import xyz.blacksheep.mjolnir.settings.*
 import xyz.blacksheep.mjolnir.utils.*
 import xyz.blacksheep.mjolnir.ui.theme.*
 
+/**
+ * A composable screen that provides the UI for manually creating file shortcuts.
+ *
+ * **Usage:**
+ * This screen is hosted by [ManualFileGenActivity] but can technically be reused elsewhere.
+ *
+ * **Inputs:**
+ * - Game Title: The name used for the filename.
+ * - Contents: The string data written inside the file.
+ * - Extension: Defaults to .steam, but user editable.
+ * - Directory: Defaults to the global ROMs path, but can be overridden per-file.
+ *
+ * @param defaultRomPath The persistent ROM directory path stored in SharedPreferences.
+ * @param onClose Callback invoked when the user presses the back button or arrow.
+ */
 @Suppress("AssignedValueIsNeverRead")
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -207,6 +222,17 @@ fun ManualEntryScreen(
     }
 }
 
+/**
+ * A specialized [OutlinedTextField] wrapper that forces the "No Extract UI" flag.
+ *
+ * **Why is this needed?**
+ * On AYN Thor devices (and other landscape handhelds), standard Android text fields
+ * often trigger a full-screen "Extract UI" (keyboard takes over entire screen with a text box).
+ * This behavior is jarring and often broken on these devices.
+ *
+ * This function uses [onGloballyPositioned] to find the underlying Android View and
+ * manually apply `EditorInfo.IME_FLAG_NO_EXTRACT_UI`.
+ */
 @Composable
 fun NoExtractOutlinedTextField(
     value: String,

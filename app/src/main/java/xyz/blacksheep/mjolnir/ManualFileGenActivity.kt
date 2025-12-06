@@ -59,6 +59,19 @@ import xyz.blacksheep.mjolnir.settings.AppTheme
 import xyz.blacksheep.mjolnir.ui.theme.MjolnirTheme
 import xyz.blacksheep.mjolnir.utils.SteamTool
 
+/**
+ * Activity that provides a manual interface for creating file-based shortcuts (e.g., .steam files).
+ *
+ * **Purpose:**
+ * Unlike [SteamFileGenActivity] which automates creation via SteamDB, this activity gives the user
+ * raw control over the filename, extension, and content. This is useful for power users who want
+ * to create custom scripts or launch arguments for emulators.
+ *
+ * **Key Features:**
+ * - Custom filename and extension inputs.
+ * - Raw content editing.
+ * - Option to override the default ROMs directory for a specific file.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 class ManualFileGenActivity : ComponentActivity() {
 
@@ -249,6 +262,17 @@ class ManualFileGenActivity : ComponentActivity() {
         }
     }
 
+    /**
+     * A specialized [OutlinedTextField] wrapper that forces the "No Extract UI" flag.
+     *
+     * **Why is this needed?**
+     * On AYN Thor devices (and other landscape handhelds), standard Android text fields
+     * often trigger a full-screen "Extract UI" (keyboard takes over entire screen with a text box).
+     * This behavior is jarring and often broken on these devices.
+     *
+     * This function uses [onGloballyPositioned] to find the underlying Android View and
+     * manually apply `EditorInfo.IME_FLAG_NO_EXTRACT_UI`.
+     */
     @Composable
     private fun NoExtractOutlinedTextField(
         value: String,

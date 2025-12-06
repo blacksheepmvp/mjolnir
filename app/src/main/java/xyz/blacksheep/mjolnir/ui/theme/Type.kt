@@ -6,7 +6,15 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 
-// Set of Material typography styles to start with
+/**
+ * Defines the Material 3 typography styles used throughout the Mjolnir application.
+ *
+ * Currently uses the default system font family.
+ *
+ * **Usage:**
+ * Access these styles via `MaterialTheme.typography` in your Composables.
+ * e.g., `Text("Hello", style = MaterialTheme.typography.bodyLarge)`
+ */
 val Typography = Typography(
     bodyLarge = TextStyle(
         fontFamily = FontFamily.Default,

@@ -8,6 +8,9 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
 
     <queries>
         <intent>
@@ -17,6 +20,7 @@
     <uses-permission android:name="android.permission.VIBRATE" />
     <application
         android:name=".MjolnirApp"
+        android:enableOnBackInvokedCallback="true"
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
@@ -49,10 +53,25 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+        
+        <activity
+            android:name=".HomeActivity"
+            android:exported="true"
+            android:theme="@style/Theme.Mjolnir.Transparent"
+            android:launchMode="standard"
+            android:excludeFromRecents="true"
+            android:screenOrientation="fullSensor"
+            android:configChanges="orientation|screenSize|keyboard|keyboardHidden">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.HOME" />
+                <category android:name="android.intent.category.SECONDARY_HOME" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
+
         <activity
             android:name=".SteamFileGenActivity"
             android:exported="true"
@@ -72,12 +91,61 @@
             android:name=".ManualFileGenActivity"
             android:exported="false"
             android:theme="@style/Theme.Mjolnir" />
+            
+        <activity
+            android:name=".ScreenshotPermissionActivity"
+            android:exported="false"
+            android:theme="@style/Theme.Mjolnir.Transparent" />
+            
+        <activity
+            android:name=".ScreenshotActionActivity"
+            android:exported="false"
+            android:launchMode="singleInstance"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:theme="@style/Theme.Mjolnir.Transparent" />
+            
+        <activity
+            android:name=".DssPermissionActivity"
+            android:exported="false"
+            android:launchMode="singleInstance"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:theme="@style/Theme.Mjolnir.Transparent" />
+
+        <activity
+            android:name=".focus.FocusStealerActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:taskAffinity=""
+            android:theme="@style/Theme.Mjolnir.FocusStealer" />
+
+        <activity
+            android:name=".onboarding.OnboardingActivity"
+            android:exported="false"
+            android:theme="@style/Theme.Mjolnir" />
+
+        <activity
+            android:name=".onboarding.AdvancedRequiredActivity"
+            android:exported="false"
+            android:theme="@style/Theme.Mjolnir.Transparent" />
 
         <service
             android:name=".MjolnirHomeTileService"
             android:exported="true"
             android:icon="@drawable/ic_home"
             android:label="@string/mjolnir_home_tile_label"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+        
+        <service
+            android:name=".DualScreenshotTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_home"
+            android:label="DualShot"
             android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
             <intent-filter>
                 <action android:name="android.service.quicksettings.action.QS_TILE" />
@@ -112,9 +180,14 @@
         <service
             android:name=".services.KeepAliveService"
             android:exported="false"
-            android:process=":keepalive"
             android:stopWithTask="false"
             android:foregroundServiceType="connectedDevice"
+            tools:ignore="ForegroundServicePermission" />
+            
+        <service
+            android:name=".services.DualScreenshotService"
+            android:exported="false"
+            android:foregroundServiceType="mediaProjection"
             tools:ignore="ForegroundServicePermission" />
 
     </application>

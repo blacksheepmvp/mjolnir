@@ -15,4 +15,20 @@
         <item name="android:windowNoTitle">true</item>
         <item name="android:backgroundDimEnabled">false</item>
     </style>
+
+    <!-- Theme for the focus-stealing activity. It's fully translucent and has no animations. -->
+    <style name="Theme.Mjolnir.FocusStealer" parent="@android:style/Theme.Translucent.NoTitleBar.Fullscreen">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowIsFloating">false</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowAnimationStyle">@style/Animation.Mjolnir.NoAnimation</item>
+    </style>
+
+    <!-- A style that disables all activity transition animations. -->
+    <style name="Animation.Mjolnir.NoAnimation" parent="@android:style/Animation">
+        <item name="android:activityOpenEnterAnimation">@null</item>
+        <item name="android:activityOpenExitAnimation">@null</item>
+        <item name="android:activityCloseEnterAnimation">@null</item>
+        <item name="android:activityCloseExitAnimation">@null</item>
+    </style>
 </resources>
