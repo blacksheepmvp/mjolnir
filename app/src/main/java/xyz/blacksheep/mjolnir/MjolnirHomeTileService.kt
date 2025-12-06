@@ -5,6 +5,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
+import android.os.Build
 import android.provider.Settings
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
@@ -95,13 +96,32 @@ class MjolnirHomeTileService : TileService(), SharedPreferences.OnSharedPreferen
             qsTile?.let {
                 val isInterceptionActive = prefs.getBoolean(KEY_HOME_INTERCEPTION_ACTIVE, false)
                 val accessibilityEnabled = isAccessibilityServiceEnabled(this)
-                // The tile is active only if the feature is on AND the service is running.
-                it.state = if (isInterceptionActive && accessibilityEnabled) {
-                    Tile.STATE_ACTIVE
+                
+                val topApp = prefs.getString(KEY_TOP_APP, null)
+                val bottomApp = prefs.getString(KEY_BOTTOM_APP, null)
+                val hasHomeApps = !topApp.isNullOrEmpty() || !bottomApp.isNullOrEmpty()
+
+                val labelText: String
+                val state: Int
+
+                if (accessibilityEnabled && isInterceptionActive) {
+                    labelText = "Advanced"
+                    state = Tile.STATE_ACTIVE
+                } else if (hasHomeApps) {
+                    labelText = "Basic"
+                    state = Tile.STATE_INACTIVE
                 } else {
-                    Tile.STATE_INACTIVE
+                    labelText = "Off"
+                    state = Tile.STATE_INACTIVE
                 }
-                DiagnosticsLogger.logEvent("Tile", "TILE_UPDATE", "state=${it.state} isInterceptionActive=$isInterceptionActive accessibilityEnabled=$accessibilityEnabled", this)
+
+                it.label = labelText
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    it.subtitle = "Mjolnir Home"
+                }
+                it.state = state
+                
+                DiagnosticsLogger.logEvent("Tile", "TILE_UPDATE", "state=${it.state} label=$labelText", this)
                 it.updateTile()
             }
         } catch (e: Exception) {
@@ -110,7 +130,7 @@ class MjolnirHomeTileService : TileService(), SharedPreferences.OnSharedPreferen
     }
 
     override fun onSharedPreferenceChanged(sharedPreferences: SharedPreferences?, key: String?) {
-        if (key == KEY_HOME_INTERCEPTION_ACTIVE) {
+        if (key == KEY_HOME_INTERCEPTION_ACTIVE || key == KEY_TOP_APP || key == KEY_BOTTOM_APP) {
             updateTileState()
         }
     }

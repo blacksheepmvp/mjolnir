@@ -3,6 +3,7 @@ package xyz.blacksheep.mjolnir.onboarding
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -61,6 +62,7 @@ import kotlinx.coroutines.launch
 import xyz.blacksheep.mjolnir.KEY_THEME
 import xyz.blacksheep.mjolnir.PREFS_NAME
 import xyz.blacksheep.mjolnir.settings.AppTheme
+import xyz.blacksheep.mjolnir.settings.BlacklistSettingsScreen
 import xyz.blacksheep.mjolnir.utils.DiagnosticsConfig
 import xyz.blacksheep.mjolnir.utils.DiagnosticsLogger
 import android.graphics.Color as AndroidColor
@@ -187,9 +189,17 @@ fun OnboardingNavHost(viewModel: OnboardingViewModel) {
     }
 
     fun finishOnboarding() {
-        DiagnosticsLogger.logEvent("Onboarding", "ON_FINISH_CALLED", "About to finish affinity", context)
-        context.findActivity()?.finishAffinity()
-        DiagnosticsLogger.logEvent("Onboarding", "FINISH_AFFINITY_CALLED", "(This might not be logged if process dies)", context)
+        DiagnosticsLogger.logEvent("Onboarding", "ON_FINISH_CALLED", "Finishing and returning Home", context)
+        
+        // Go to Home screen (Launcher)
+        val homeIntent = Intent(Intent.ACTION_MAIN).apply {
+            addCategory(Intent.CATEGORY_HOME)
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        }
+        context.startActivity(homeIntent)
+        
+        // Finish and remove from recents so it can't be swiped away to kill the service
+        context.findActivity()?.finishAndRemoveTask()
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -204,6 +214,7 @@ fun OnboardingNavHost(viewModel: OnboardingViewModel) {
             composable("advanced_dss") { AdvancedDssScreen(navController, viewModel, isNavigating = isNavigating, onNavigate = ::onNavigate) }
             composable("advanced_set_default") { AdvancedSetDefaultHomeScreen(navController, viewModel, onFinish = ::finishOnboarding, isNavigating = isNavigating, onNavigate = ::onNavigate) }
             composable("no_home") { NoHomeSetupScreen(navController, onFinish = ::finishOnboarding, isNavigating = isNavigating, onNavigate = ::onNavigate) }
+            composable("app_blacklist") { BlacklistSettingsScreen(navController) }
         }
         
         if (isNavigating) {
@@ -271,9 +282,9 @@ fun EntryScreen(navController: NavController, onFinish: () -> Unit, isNavigating
                     .fillMaxWidth(),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Text("Welcome to Mjolnir", style = MaterialTheme.typography.headlineMedium, textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onBackground)
+                Text("Mjolnir Home Setup", style = MaterialTheme.typography.headlineMedium, textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onBackground)
                 Spacer(modifier = Modifier.height(16.dp))
-                Text("Mjolnir lets you choose what opens on your top and bottom screens, and optionally adds Home-button gestures and dual-screen screenshots.", textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurface)
+                Text("Mjolnir Home Basic lets you choose the home app for your top and bottom screens individually. Mjolnir Home Advanced lets you customize home button behavior and access special features", textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurface)
                 Spacer(modifier = Modifier.height(48.dp))
                 
                 Row(
@@ -319,7 +330,7 @@ fun EntryScreen(navController: NavController, onFinish: () -> Unit, isNavigating
                 modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 2.dp),
                 enabled = !isNavigating
             ) {
-                Text("Skip", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelLarge)
+                Text("Skip Home Setup", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelLarge)
             }
         }
     }

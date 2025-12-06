@@ -7,23 +7,33 @@ import android.content.pm.PackageManager
 import android.content.pm.ResolveInfo
 import android.os.Build
 import android.provider.Settings
+import android.view.ViewConfiguration
 import android.view.accessibility.AccessibilityManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.TouchApp
+import androidx.compose.material.icons.filled.ViewCarousel
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -35,7 +45,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
+import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -50,15 +61,22 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.core.content.edit
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.navigation.NavController
 import xyz.blacksheep.mjolnir.KEY_BOTTOM_APP
+import xyz.blacksheep.mjolnir.KEY_CUSTOM_DOUBLE_TAP_DELAY
 import xyz.blacksheep.mjolnir.KEY_DOUBLE_HOME_ACTION
 import xyz.blacksheep.mjolnir.KEY_DSS_AUTO_STITCH
+import xyz.blacksheep.mjolnir.KEY_ENABLE_FOCUS_LOCK_WORKAROUND
 import xyz.blacksheep.mjolnir.KEY_HOME_INTERCEPTION_ACTIVE
 import xyz.blacksheep.mjolnir.KEY_LAUNCH_FAILURE_COUNT
 import xyz.blacksheep.mjolnir.KEY_LONG_HOME_ACTION
@@ -66,10 +84,13 @@ import xyz.blacksheep.mjolnir.KEY_ONBOARDING_COMPLETE
 import xyz.blacksheep.mjolnir.KEY_SINGLE_HOME_ACTION
 import xyz.blacksheep.mjolnir.KEY_TOP_APP
 import xyz.blacksheep.mjolnir.KEY_TRIPLE_HOME_ACTION
+import xyz.blacksheep.mjolnir.KEY_USE_SYSTEM_DOUBLE_TAP_DELAY
 import xyz.blacksheep.mjolnir.PREFS_NAME
 import xyz.blacksheep.mjolnir.home.Action
 import xyz.blacksheep.mjolnir.home.actionLabel
+import xyz.blacksheep.mjolnir.settings.rememberDrawablePainter
 import xyz.blacksheep.mjolnir.utils.DiagnosticsLogger
+import kotlin.math.roundToInt
 
 @Composable
 fun AdvancedPermissionScreen(navController: NavController, isNavigating: Boolean, onNavigate: (() -> Unit) -> Unit) {
@@ -211,68 +232,265 @@ fun AdvancedHomeSelectionScreen(navController: NavController, viewModel: Onboard
         onPrev = { onNavigate { navController.popBackStack() } },
         isBasicFlow = false,
         onSwitchToAdvanced = {},
-        isNavigating = isNavigating
+        isNavigating = isNavigating,
+        // FIX: Pass the blacklist handler here too!
+        onManageBlacklist = { 
+            DiagnosticsLogger.logEvent("Onboarding", "BLACKLIST_CLICKED_ADV", "Navigating to app_blacklist", navController.context)
+            onNavigate { navController.navigate("app_blacklist") } 
+        }
     )
 }
 
 @Composable
 fun AdvancedGestureScreen(navController: NavController, viewModel: OnboardingViewModel, isNavigating: Boolean, onNavigate: (() -> Unit) -> Unit) {
     val state by viewModel.uiState
+    val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE) }
     var showInfoDialog by remember { mutableStateOf(false) }
+
+    // --- DOUBLE-TAP DELAY SETTINGS (Re-added) ---
+    val systemDoubleTap = ViewConfiguration.getDoubleTapTimeout()
+
+    var useSystemDoubleTapDelay by remember {
+        mutableStateOf(prefs.getBoolean(KEY_USE_SYSTEM_DOUBLE_TAP_DELAY, true))
+    }
+
+    var customDoubleTapDelayMs by remember {
+        mutableStateOf(prefs.getInt(KEY_CUSTOM_DOUBLE_TAP_DELAY, systemDoubleTap))
+    }
+
+    fun updateUseSystemDoubleTapDelay(newValue: Boolean) {
+        useSystemDoubleTapDelay = newValue
+        prefs.edit { putBoolean(KEY_USE_SYSTEM_DOUBLE_TAP_DELAY, newValue) }
+    }
+
+    fun updateCustomDoubleTapDelay(newValue: Int) {
+        customDoubleTapDelayMs = newValue
+        prefs.edit { putInt(KEY_CUSTOM_DOUBLE_TAP_DELAY, newValue) }
+    }
+
+    val topLabel = remember(state.topAppPackage) { getAppName(context, state.topAppPackage) }
+    val bottomLabel = remember(state.bottomAppPackage) { getAppName(context, state.bottomAppPackage) }
+    val defaultHomePkg = remember { getCurrentDefaultHomePackage(context) }
+    val defaultHomeLabel = remember(defaultHomePkg) { getAppName(context, defaultHomePkg) }
 
     if (showInfoDialog) {
         AlertDialog(
             onDismissRequest = { showInfoDialog = false },
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-            title = { Text("Gesture Actions") },
-            text = { Text("• Default Home: Let Android run its usual Home behavior.\n" + "• Top Home: Open your top-screen app.\n" + "• Bottom Home: Open your bottom-screen app.\n" + "• Both Home: Open both apps at once.\n" + "• App Switcher: Open the recent apps screen.") },
+            title = { Text("Actions") },
+            text = {
+                Text("Recent apps: opens the app switcher\n" +
+                        "Default home: sends the home button to $defaultHomeLabel\n" +
+                        "Top screen home: opens $topLabel on the top screen\n" +
+                        "Bottom screen home: opens $bottomLabel on the bottom screen\n" +
+                        "Both screens home*: executes both Top screen home and Bottom screen home.\n\n" +
+                        "* Note: this is the default Single Tap behavior for Basic")
+            },
             confirmButton = { TextButton(onClick = { showInfoDialog = false }) { Text("Got it") } }
         )
     }
 
     Scaffold(containerColor = Color.Transparent) { padding ->
-        Box(modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp)) {
+        Box(modifier = Modifier.fillMaxSize().padding(padding)) {
+            // Content column with scroll and increased padding
             Column(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    // Use 16.dp standard padding, we will rely on "density" now instead of massive padding
+                    .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 80.dp), 
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Text("Gesture Setup", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.onBackground, textAlign = TextAlign.Center)
-                Spacer(modifier = Modifier.height(8.dp))
-                Text("Map Home button presses to actions.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface, textAlign = TextAlign.Center)
-                Spacer(modifier = Modifier.height(24.dp))
+                Text("Home Button Behavior", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.onBackground, textAlign = TextAlign.Center)
+                
+                Spacer(modifier = Modifier.height(32.dp))
 
-                Column(modifier = Modifier.padding(horizontal = 24.dp)) { 
-                    GestureRow("Single Press", state.singleHomeAction, isNavigating) { viewModel.setGestureAction(Gesture.SINGLE, it) }
-                    GestureRow("Double Tap", state.doubleHomeAction, isNavigating) { viewModel.setGestureAction(Gesture.DOUBLE, it) }
-                    GestureRow("Triple Tap", state.tripleHomeAction, isNavigating) { viewModel.setGestureAction(Gesture.TRIPLE, it) }
-                    GestureRow("Long Press", state.longHomeAction, isNavigating) { viewModel.setGestureAction(Gesture.LONG, it) }
+                // --- GRID LAYOUT: 4 Cols, 2 Rows ---
+                // Row 1: Headers
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                    GestureHeader("Single Tap", 1)
+                    GestureHeader("Double Tap", 2)
+                    GestureHeader("Triple Tap", 3)
+                    GestureHeader("Long Press", 0)
+                }
+                
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Row 2: Actions (Dropdowns)
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                    Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                        GestureDropdown(state.singleHomeAction, isNavigating, state.topAppPackage, state.bottomAppPackage) { viewModel.setGestureAction(Gesture.SINGLE, it) }
+                    }
+                    Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                        GestureDropdown(state.doubleHomeAction, isNavigating, state.topAppPackage, state.bottomAppPackage) { viewModel.setGestureAction(Gesture.DOUBLE, it) }
+                    }
+                    Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                        GestureDropdown(state.tripleHomeAction, isNavigating, state.topAppPackage, state.bottomAppPackage) { viewModel.setGestureAction(Gesture.TRIPLE, it) }
+                    }
+                    Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                        GestureDropdown(state.longHomeAction, isNavigating, state.topAppPackage, state.bottomAppPackage) { viewModel.setGestureAction(Gesture.LONG, it) }
+                    }
+                }
+                
+                Spacer(modifier = Modifier.height(32.dp))
+
+                // --- Double Tap Delay Controls ---
+                Row(
+                    modifier = Modifier.fillMaxWidth().clickable(enabled = !isNavigating) { updateUseSystemDoubleTapDelay(!useSystemDoubleTapDelay) }.padding(vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Toggle on LEFT
+                    Switch(
+                        checked = useSystemDoubleTapDelay,
+                        onCheckedChange = { updateUseSystemDoubleTapDelay(it) },
+                        enabled = !isNavigating
+                    )
+                    Spacer(Modifier.width(16.dp))
+                    // Text on RIGHT
+                    Text(
+                        text = "Use system double-tap delay (${systemDoubleTap} ms)",
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+
+                if (!useSystemDoubleTapDelay) {
+                    val minDelay = 100
+                    val maxDelay = 500
+                    val stepSize = 25
+                    val steps = (maxDelay - minDelay) / stepSize - 1
+
+                    Text(
+                        text = "Custom delay (${customDoubleTapDelayMs} ms)",
+                        color = MaterialTheme.colorScheme.onSurface,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+
+                    Slider(
+                        value = customDoubleTapDelayMs.toFloat(),
+                        onValueChange = { newValue ->
+                            val stepped = ((newValue - minDelay) / stepSize).roundToInt() * stepSize + minDelay
+                            updateCustomDoubleTapDelay(stepped)
+                        },
+                        valueRange = minDelay.toFloat()..maxDelay.toFloat(),
+                        steps = steps,
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !isNavigating
+                    )
                 }
             }
             
-            OutlinedButton(onClick = { onNavigate { navController.popBackStack() } }, modifier = Modifier.align(Alignment.BottomStart).padding(bottom = 8.dp), enabled = !isNavigating) { Text("Back") }
-            IconButton(onClick = { showInfoDialog = true }, modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp), enabled = !isNavigating) { Icon(Icons.Default.Info, "Info", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
-            OutlinedButton(onClick = { onNavigate { viewModel.setHomeInterception(true); navController.navigate("advanced_dss") } }, modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 8.dp), enabled = !isNavigating) { Text("Next") }
+            // Buttons fixed at bottom, outside scroll
+            Box(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+                OutlinedButton(onClick = { onNavigate { navController.popBackStack() } }, modifier = Modifier.align(Alignment.BottomStart).padding(bottom = 8.dp), enabled = !isNavigating) { Text("Back") }
+                IconButton(onClick = { showInfoDialog = true }, modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp), enabled = !isNavigating) { Icon(Icons.Default.Info, "Info", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+                OutlinedButton(onClick = { onNavigate { viewModel.setHomeInterception(true); navController.navigate("advanced_dss") } }, modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 8.dp), enabled = !isNavigating) { Text("Next") }
+            }
         }
     }
 }
 
 @Composable
-fun GestureRow(label: String, currentAction: Action, isNavigating: Boolean, onActionSelected: (Action) -> Unit) {
-    var expanded by remember { mutableStateOf(false) }
-    Row(modifier = Modifier.fillMaxWidth().clickable(enabled = !isNavigating) { expanded = true }.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(label, modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurface)
-        Box {
-            Text(text = actionLabel(currentAction), color = MaterialTheme.colorScheme.primary)
-            DropdownMenu(
-                expanded = expanded, 
-                onDismissRequest = { expanded = false },
-                modifier = Modifier.background(MaterialTheme.colorScheme.surfaceContainerHigh)
-            ) {
-                Action.values().forEach { action ->
-                    DropdownMenuItem(text = { Text(actionLabel(action)) }, onClick = { onActionSelected(action); expanded = false })
+fun RowScope.GestureHeader(text: String, count: Int) {
+    Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+        // Icons Row moved ABOVE Text
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
+            if (count > 0) {
+                repeat(count) {
+                    Icon(Icons.Default.Home, contentDescription = null, modifier = Modifier.size(12.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
+            } else {
+                // Long Press: Home + TouchApp (Finger)
+                Icon(Icons.Default.Home, contentDescription = null, modifier = Modifier.size(12.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.width(2.dp))
+                Icon(Icons.Default.TouchApp, contentDescription = null, modifier = Modifier.size(12.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
+        // Text moved BELOW Icons
+        Text(text, textAlign = TextAlign.Center, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+fun GestureDropdown(currentAction: Action, isNavigating: Boolean, topApp: String?, bottomApp: String?, onActionSelected: (Action) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    Box(modifier = Modifier.clickable(enabled = !isNavigating) { expanded = true }.padding(8.dp)) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            // Current Selection Icon
+            ActionIcon(action = currentAction, topApp = topApp, bottomApp = bottomApp, size = 32.dp)
+            
+            Text(
+                text = actionLabel(currentAction), 
+                color = MaterialTheme.colorScheme.primary, 
+                style = MaterialTheme.typography.bodyMedium,
+                textAlign = TextAlign.Center,
+                maxLines = 1
+            )
+        }
+        
+        DropdownMenu(
+            expanded = expanded, 
+            onDismissRequest = { expanded = false },
+            modifier = Modifier.background(MaterialTheme.colorScheme.surfaceContainerHigh)
+        ) {
+            Action.values().forEach { action ->
+                DropdownMenuItem(
+                    text = { 
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            ActionIcon(action = action, topApp = topApp, bottomApp = bottomApp, size = 24.dp)
+                            Spacer(Modifier.width(8.dp))
+                            Text(actionLabel(action)) 
+                        }
+                    }, 
+                    onClick = { onActionSelected(action); expanded = false }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun ActionIcon(action: Action, topApp: String?, bottomApp: String?, size: androidx.compose.ui.unit.Dp) {
+    val context = LocalContext.current
+    val iconModifier = Modifier.size(size)
+    
+    when(action) {
+        Action.TOP_HOME -> {
+            if (topApp != null) {
+                val pm = context.packageManager
+                val drawable = remember(topApp) { try { pm.getApplicationIcon(topApp) } catch(e: Exception) { null } }
+                Image(painter = rememberDrawablePainter(drawable), contentDescription = null, modifier = iconModifier)
+            } else {
+                Icon(Icons.Default.Home, contentDescription = null, modifier = iconModifier)
+            }
+        }
+        Action.BOTTOM_HOME -> {
+            if (bottomApp != null) {
+                val pm = context.packageManager
+                val drawable = remember(bottomApp) { try { pm.getApplicationIcon(bottomApp) } catch(e: Exception) { null } }
+                Image(painter = rememberDrawablePainter(drawable), contentDescription = null, modifier = iconModifier)
+            } else {
+                Icon(Icons.Default.Home, contentDescription = null, modifier = iconModifier)
+            }
+        }
+        Action.BOTH_HOME -> {
+            // Use app icon or generic home
+            val drawable = remember { try { context.packageManager.getApplicationIcon(context.packageName) } catch(e: Exception) { null } }
+            if (drawable != null) {
+                Image(painter = rememberDrawablePainter(drawable), contentDescription = null, modifier = iconModifier)
+            } else {
+                Icon(Icons.Default.Home, contentDescription = null, modifier = iconModifier)
+            }
+        }
+        Action.DEFAULT_HOME -> {
+            // Always use generic Home icon
+            Icon(Icons.Default.Home, contentDescription = null, modifier = iconModifier)
+        }
+        Action.APP_SWITCH -> Icon(Icons.Default.ViewCarousel, contentDescription = null, modifier = iconModifier)
+        Action.NONE -> Icon(Icons.Default.Close, contentDescription = null, modifier = iconModifier)
     }
 }
 
@@ -302,8 +520,12 @@ fun AdvancedDssScreen(navController: NavController, viewModel: OnboardingViewMod
         AlertDialog(
             onDismissRequest = { showInfoDialog = false },
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-            title = { Text("Using DualShot") },
-            text = { Text("To use DualShot:\n" + "• Turn on the DualShot quick tile.\n" + "• Use the system screenshot button on the bottom screen.\n\n" + "Many people place the DualShot tile near their usual screenshot control.") },
+            title = { Text("Using DualShot") },text = {
+                Text("To use DualShot:\n" +
+                        "1. Make sure the DualShot tile is Active\n" +
+                        "2. Use the Screenshot: Bottom tile\n\n" +
+                        "Note: Tiles can be found in your notifications bar. You may need to edit your quick tiles and reposition them.")
+            },
             confirmButton = { TextButton(onClick = { showInfoDialog = false }) { Text("Got it") } }
         )
     }
@@ -311,12 +533,37 @@ fun AdvancedDssScreen(navController: NavController, viewModel: OnboardingViewMod
     Scaffold(containerColor = Color.Transparent) { padding ->
         Box(modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp)) {
             Column(modifier = Modifier.align(Alignment.Center).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("DualShot (Auto-Stitch)", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.onBackground, textAlign = TextAlign.Center)
+                // CHANGED: Title
+                Text("Dual Screenshots", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.onBackground, textAlign = TextAlign.Center)
                 Spacer(modifier = Modifier.height(16.dp))
-                Text("DualShot creates a combined top + bottom screenshot.\n" + "When you take a bottom screenshot, Mjolnir captures the top screen and stitches them together.", textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurface)
+                
+                // CHANGED: Subtext
+                Text(
+                    "When you use 'Screenshot: bottom' while DualShot is active, Mjolnir will generate a dual-screen-screenshot.", 
+                    textAlign = TextAlign.Center, 
+                    color = MaterialTheme.colorScheme.onSurface
+                )
                 Spacer(modifier = Modifier.height(32.dp))
-                Text(text = if (state.dssAutoStitch) "DualShot Active" else "DualShot Inactive", style = MaterialTheme.typography.titleMedium, color = if (state.dssAutoStitch) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                
+                // CHANGED: Status Text with Styling
+                val statusText = buildAnnotatedString {
+                    withStyle(style = SpanStyle(color = Color.White, fontWeight = FontWeight.Normal)) {
+                        append("DualShot: ")
+                    }
+                    if (state.dssAutoStitch) {
+                        withStyle(style = SpanStyle(color = Color.Green, fontWeight = FontWeight.Bold)) {
+                            append("Active")
+                        }
+                    } else {
+                        withStyle(style = SpanStyle(color = Color.Gray, fontWeight = FontWeight.Bold)) {
+                            append("Inactive")
+                        }
+                    }
+                }
+                
+                Text(text = statusText, style = MaterialTheme.typography.titleMedium)
                 Spacer(modifier = Modifier.height(16.dp))
+                
                 Button(
                     onClick = { toggleDss() }, 
                     modifier = Modifier.fillMaxWidth(0.7f),
@@ -355,6 +602,10 @@ fun AdvancedSetDefaultHomeScreen(navController: NavController, viewModel: Onboar
             DiagnosticsLogger.logEvent("Onboarding", "VALID_CONFIG_DETECTED", "Committing Advanced prefs", context)
             val finalInterception = !(state.topAppPackage == null && state.bottomAppPackage == null) && state.homeInterceptionActive
             val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            
+            // Check if Focus Lock should be auto-enabled
+            val autoEnableFocusLock = !state.topAppPackage.isNullOrEmpty() && state.bottomAppPackage.isNullOrEmpty()
+            
             val success = prefs.edit().apply {
                 putString(KEY_TOP_APP, state.topAppPackage)
                 putString(KEY_BOTTOM_APP, state.bottomAppPackage)
@@ -366,6 +617,7 @@ fun AdvancedSetDefaultHomeScreen(navController: NavController, viewModel: Onboar
                 putBoolean(KEY_DSS_AUTO_STITCH, state.dssAutoStitch)
                 putInt(KEY_LAUNCH_FAILURE_COUNT, 0)
                 putBoolean(KEY_ONBOARDING_COMPLETE, true)
+                putBoolean(KEY_ENABLE_FOCUS_LOCK_WORKAROUND, true) // Always default to true
             }.commit()
             DiagnosticsLogger.logEvent("Onboarding", "PREFS_COMMIT_END", "Success=$success", context)
         } else {
@@ -408,9 +660,9 @@ fun AdvancedSetDefaultHomeScreen(navController: NavController, viewModel: Onboar
         Box(modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp)) {
             Column(modifier = Modifier.align(Alignment.Center).fillMaxWidth(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
-                    text = if (defaultHomeMatchesSpecialApp) "All Done!" else "Finally...",
-                    style = MaterialTheme.typography.headlineMedium, 
-                    color = MaterialTheme.colorScheme.onBackground, 
+                    text = if (defaultHomeMatchesSpecialApp) "All Done!" else "Default Home App", // Changed from "Finally..."
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = MaterialTheme.colorScheme.onBackground,
                     textAlign = TextAlign.Center
                 )
                 Spacer(modifier = Modifier.height(16.dp))
@@ -424,12 +676,23 @@ fun AdvancedSetDefaultHomeScreen(navController: NavController, viewModel: Onboar
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))
+                if (currentHomePkg != null) {
+                    val pm = context.packageManager
+                    val drawable = remember(currentHomePkg) { try { pm.getApplicationIcon(currentHomePkg!!) } catch(e: Exception) { null } }
+                    Image(
+                        painter = rememberDrawablePainter(drawable),
+                        contentDescription = null,
+                        modifier = Modifier.size(48.dp).padding(bottom = 8.dp)
+                    )
+                }
+
                 Text("Current Default: $currentHomeLabel", textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
                 Spacer(modifier = Modifier.height(32.dp))
 
                 if (!defaultHomeMatchesSpecialApp) {
                     Button(
                         onClick = {
+                            // FIX: Wrap string action in Intent()
                             val intent = Intent(Settings.ACTION_HOME_SETTINGS)
                             homePickerLauncher.launch(intent)
                         },

@@ -242,8 +242,11 @@ class KeepAliveService : Service(), SharedPreferences.OnSharedPreferenceChangeLi
         val isAdvancedModeReady = isAccessibilityServiceEnabled(this) && hasNotificationPermission()
         val isToggleEnabled = prefs.getBoolean(KEY_HOME_INTERCEPTION_ACTIVE, false)
         val isValid = isConfigurationValid()
-        val currentDefaultHome = getCurrentDefaultHomePackage(this)
-        val isMjolnirDefault = currentDefaultHome?.contains(packageName) == true
+        
+        // Reused for "Basic Mode" check
+        val topApp = prefs.getString(KEY_TOP_APP, null)
+        val bottomApp = prefs.getString(KEY_BOTTOM_APP, null)
+        val hasHomeApps = !topApp.isNullOrEmpty() || !bottomApp.isNullOrEmpty()
 
         val contentTitle: String
         val notificationAction: NotificationCompat.Action?
@@ -259,20 +262,20 @@ class KeepAliveService : Service(), SharedPreferences.OnSharedPreferenceChangeLi
                     PendingIntent.getActivity(this, 0, it, PendingIntent.FLAG_IMMUTABLE)
                 }
             }
-            !isToggleEnabled && isValid && isMjolnirDefault -> {
-                contentTitle = "Mjolnir Home Basic is active."
-                notificationAction = createToggleAction("Enable Advanced")
-                notificationPriority = NotificationCompat.PRIORITY_LOW
-                clickIntent = pendingIntent
-            }
             isAdvancedModeReady && isToggleEnabled -> {
-                contentTitle = "Mjolnir Home Advanced is active."
+                contentTitle = "Home: Advanced"
                 notificationAction = createToggleAction("Disable")
                 notificationPriority = NotificationCompat.PRIORITY_LOW
                 clickIntent = pendingIntent
             }
+            hasHomeApps -> {
+                contentTitle = "Home: Basic"
+                notificationAction = createToggleAction("Enable Advanced")
+                notificationPriority = NotificationCompat.PRIORITY_LOW
+                clickIntent = pendingIntent
+            }
             else -> { 
-                contentTitle = "Mjolnir Home is inactive."
+                contentTitle = "Home: Off"
                 notificationAction = createToggleAction("Enable")
                 notificationPriority = NotificationCompat.PRIORITY_DEFAULT
                 clickIntent = pendingIntent

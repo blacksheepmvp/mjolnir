@@ -12,10 +12,10 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -27,6 +27,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Tune
@@ -68,6 +69,7 @@ import androidx.navigation.NavController
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import xyz.blacksheep.mjolnir.KEY_BOTTOM_APP
+import xyz.blacksheep.mjolnir.KEY_ENABLE_FOCUS_LOCK_WORKAROUND
 import xyz.blacksheep.mjolnir.KEY_HOME_INTERCEPTION_ACTIVE
 import xyz.blacksheep.mjolnir.KEY_LAUNCH_FAILURE_COUNT
 import xyz.blacksheep.mjolnir.KEY_ONBOARDING_COMPLETE
@@ -110,7 +112,11 @@ fun BasicHomeSelectionScreen(
         onPrev = { onNavigate { navController.popBackStack() } },
         isBasicFlow = true,
         onSwitchToAdvanced = { onNavigate { navController.navigate("advanced_permissions") } },
-        isNavigating = isNavigating
+        isNavigating = isNavigating,
+        onManageBlacklist = { 
+            DiagnosticsLogger.logEvent("Onboarding", "BLACKLIST_CLICKED", "Navigating to app_blacklist", navController.context)
+            onNavigate { navController.navigate("app_blacklist") } 
+        }
     )
 }
 
@@ -125,7 +131,8 @@ fun HomeSelectionUI(
     onPrev: () -> Unit,
     isBasicFlow: Boolean = false,
     onSwitchToAdvanced: () -> Unit = {},
-    isNavigating: Boolean
+    isNavigating: Boolean,
+    onManageBlacklist: () -> Unit = {}
 ) {
     val context = LocalContext.current
     var showAllApps by remember { mutableStateOf(false) }
@@ -160,8 +167,12 @@ fun HomeSelectionUI(
         AlertDialog(
             onDismissRequest = { showInfoDialog = false },
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-            title = { Text("Mjolnir Homes") },
-            text = { Text("• Top Home: The app that opens on your top screen when you press Home.\n\n• Bottom Home: The app that opens on your bottom screen.\n\nTypically, users pick a game launcher for the top screen and Android settings or a standard launcher for the bottom.") },
+            title = { Text("Choosing Your Frontends") },
+            text = {
+                Text("You can add almost any launcher, frontend or app to your top and bottom home screens with Mjolnir. In a Basic setup, both activate when you press Home. In an Advanced setup, you have finer control over exactly how each screen reacts.\n\n" +
+                        "App Blacklist: Ban or unban apps from the app picker\n" +
+                        "App Filter: Toggle between 'All apps' and 'Only launchers and frontends'")
+            },
             confirmButton = { TextButton(onClick = { showInfoDialog = false }) { Text("Got it") } }
         )
     }
@@ -261,21 +272,40 @@ fun HomeSelectionUI(
                         }
                     }
                 }
-                Spacer(Modifier.height(80.dp))
+                Spacer(Modifier.height(16.dp))
+                
+                
+                Spacer(Modifier.height(64.dp))
             }
 
             OutlinedButton(onClick = onPrev, modifier = Modifier.align(Alignment.BottomStart).padding(bottom = 8.dp), enabled = !isNavigating) { Text("Back") }
             IconButton(onClick = { showInfoDialog = true }, modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp), enabled = !isNavigating) { Icon(Icons.Default.Info, "Info", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
             OutlinedButton(onClick = onNext, modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 8.dp), enabled = !isNavigating && (topAppPackage != null || bottomAppPackage != null)) { Text("Next") }
 
-            FloatingActionButton(
-                onClick = { showAllApps = !showAllApps },
+            // Top-right controls
+            Row(
                 modifier = Modifier.align(Alignment.TopEnd),
-                containerColor = if (showAllApps) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                contentColor = if (showAllApps) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
-                elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 6.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Icon(if (showAllApps) Icons.Filled.FilterList else Icons.Filled.Tune, contentDescription = "Filter Apps")
+                FloatingActionButton(
+                    onClick = onManageBlacklist,
+                    containerColor = Color(0xFF424242), // Solid dark grey
+                    contentColor = Color.White,
+                    elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 6.dp),
+                    modifier = Modifier.size(56.dp)
+                ) {
+                    Icon(Icons.Default.Block, contentDescription = "Blacklist")
+                }
+
+                FloatingActionButton(
+                    onClick = { showAllApps = !showAllApps },
+                    containerColor = if (showAllApps) MaterialTheme.colorScheme.primary else Color(0xFF424242), // Solid dark grey
+                    contentColor = if (showAllApps) MaterialTheme.colorScheme.onPrimary else Color.White,
+                    elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 6.dp),
+                    modifier = Modifier.size(56.dp)
+                ) {
+                    Icon(if (showAllApps) Icons.Filled.FilterList else Icons.Filled.Tune, contentDescription = "Filter Apps")
+                }
             }
         }
     }
@@ -314,6 +344,7 @@ fun BasicSetDefaultHomeScreen(
                 .putBoolean(KEY_HOME_INTERCEPTION_ACTIVE, false)
                 .putInt(KEY_LAUNCH_FAILURE_COUNT, 0)
                 .putBoolean(KEY_ONBOARDING_COMPLETE, true)
+                .putBoolean(KEY_ENABLE_FOCUS_LOCK_WORKAROUND, true) // Always default to true
                 .commit()
             DiagnosticsLogger.logEvent("Onboarding", "PREFS_COMMIT_END", "Success=$success", context)
         } else {

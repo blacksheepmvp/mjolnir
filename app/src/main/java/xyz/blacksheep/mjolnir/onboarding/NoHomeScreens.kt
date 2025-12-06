@@ -61,7 +61,7 @@ fun NoHomeSetupScreen(
             ) {
                 Text("Skip Home Setup", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.onBackground)
                 Spacer(modifier = Modifier.height(16.dp))
-                Text("You can set up Mjolnir Home later from the main screen.", textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurface)
+                Text("You can revisit the Mjolnir Home Setup from the main menu.", textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurface)
             }
 
             OutlinedButton(onClick = { onNavigate { navController.popBackStack() } }, modifier = Modifier.align(Alignment.BottomStart).padding(bottom = 8.dp), enabled = !isNavigating) { Text("Back") }

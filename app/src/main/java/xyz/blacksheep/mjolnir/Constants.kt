@@ -49,6 +49,8 @@ const val KEY_DSS_AUTO_STITCH = "dss_auto_stitch"
  */
 const val KEY_ONBOARDING_COMPLETE = "onboarding_complete"
 
+const val KEY_LAST_SEEN_VERSION = "last_seen_version"
+
 /**
  * Intent action for deleting the source (bottom) screenshot from the result notification.
  */

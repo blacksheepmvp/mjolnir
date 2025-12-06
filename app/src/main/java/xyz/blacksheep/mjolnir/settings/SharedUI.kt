@@ -985,7 +985,7 @@ private fun AppearanceSettingsScreen(
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun BlacklistSettingsScreen(navController: NavController) {
+fun BlacklistSettingsScreen(navController: NavController) {
     val context = LocalContext.current
     val prefs = remember { context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE) }
 
@@ -1094,7 +1094,7 @@ private fun BlacklistSettingsScreen(navController: NavController) {
  * @param onAppSelected Callback invoked with the selected package name.
  */
 @Composable
-private fun AddAppToBlacklistDialog(
+fun AddAppToBlacklistDialog(
     allApps: List<AppInfo>,
     onDismiss: () -> Unit,
     onAppSelected: (String) -> Unit
