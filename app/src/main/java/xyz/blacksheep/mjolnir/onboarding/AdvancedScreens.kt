@@ -12,6 +12,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -34,6 +35,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -60,15 +62,17 @@ import xyz.blacksheep.mjolnir.KEY_DSS_AUTO_STITCH
 import xyz.blacksheep.mjolnir.KEY_HOME_INTERCEPTION_ACTIVE
 import xyz.blacksheep.mjolnir.KEY_LAUNCH_FAILURE_COUNT
 import xyz.blacksheep.mjolnir.KEY_LONG_HOME_ACTION
+import xyz.blacksheep.mjolnir.KEY_ONBOARDING_COMPLETE
 import xyz.blacksheep.mjolnir.KEY_SINGLE_HOME_ACTION
 import xyz.blacksheep.mjolnir.KEY_TOP_APP
 import xyz.blacksheep.mjolnir.KEY_TRIPLE_HOME_ACTION
 import xyz.blacksheep.mjolnir.PREFS_NAME
 import xyz.blacksheep.mjolnir.home.Action
 import xyz.blacksheep.mjolnir.home.actionLabel
+import xyz.blacksheep.mjolnir.utils.DiagnosticsLogger
 
 @Composable
-fun AdvancedPermissionScreen(navController: NavController) {
+fun AdvancedPermissionScreen(navController: NavController, isNavigating: Boolean, onNavigate: (() -> Unit) -> Unit) {
     val context = LocalContext.current
     var hasPermission by remember {
         mutableStateOf(
@@ -116,20 +120,21 @@ fun AdvancedPermissionScreen(navController: NavController) {
                     Button(
                         onClick = { if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) launcher.launch(Manifest.permission.POST_NOTIFICATIONS) },
                         modifier = Modifier.fillMaxWidth(0.7f),
-                        colors = buttonColors
+                        colors = buttonColors,
+                        enabled = !isNavigating
                     ) { Text("Grant Permission") }
                 }
             }
 
-            OutlinedButton(onClick = { navController.popBackStack() }, modifier = Modifier.align(Alignment.BottomStart).padding(bottom = 8.dp)) { Text("Back") }
-            IconButton(onClick = { showInfoDialog = true }, modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp)) { Icon(Icons.Default.Info, "Info", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
-            OutlinedButton(onClick = { navController.navigate("advanced_accessibility") }, modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 8.dp)) { Text("Next") }
+            OutlinedButton(onClick = { onNavigate { navController.popBackStack() } }, modifier = Modifier.align(Alignment.BottomStart).padding(bottom = 8.dp), enabled = !isNavigating) { Text("Back") }
+            IconButton(onClick = { showInfoDialog = true }, modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp), enabled = !isNavigating) { Icon(Icons.Default.Info, "Info", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+            OutlinedButton(onClick = { onNavigate { navController.navigate("advanced_accessibility") } }, modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 8.dp), enabled = !isNavigating) { Text("Next") }
         }
     }
 }
 
 @Composable
-fun AdvancedAccessibilityScreen(navController: NavController) {
+fun AdvancedAccessibilityScreen(navController: NavController, isNavigating: Boolean, onNavigate: (() -> Unit) -> Unit) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
 
@@ -180,36 +185,38 @@ fun AdvancedAccessibilityScreen(navController: NavController) {
                     Button(
                         onClick = { context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) },
                         modifier = Modifier.fillMaxWidth(0.7f),
-                        colors = buttonColors
+                        colors = buttonColors,
+                        enabled = !isNavigating
                     ) { Text("Enable Mjolnir Service") }
                 }
             }
 
-            OutlinedButton(onClick = { navController.popBackStack() }, modifier = Modifier.align(Alignment.BottomStart).padding(bottom = 8.dp)) { Text("Back") }
-            IconButton(onClick = { showInfoDialog = true }, modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp)) { Icon(Icons.Default.Info, "Info", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
-            OutlinedButton(onClick = { navController.navigate("advanced_home_selection") }, modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 8.dp)) { Text(if (isEnabled) "Next" else "Skip") }
+            OutlinedButton(onClick = { onNavigate { navController.popBackStack() } }, modifier = Modifier.align(Alignment.BottomStart).padding(bottom = 8.dp), enabled = !isNavigating) { Text("Back") }
+            IconButton(onClick = { showInfoDialog = true }, modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp), enabled = !isNavigating) { Icon(Icons.Default.Info, "Info", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+            OutlinedButton(onClick = { onNavigate { navController.navigate("advanced_home_selection") } }, modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 8.dp), enabled = !isNavigating) { Text(if (isEnabled) "Next" else "Skip") }
         }
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AdvancedHomeSelectionScreen(navController: NavController, viewModel: OnboardingViewModel) {
+fun AdvancedHomeSelectionScreen(navController: NavController, viewModel: OnboardingViewModel, isNavigating: Boolean, onNavigate: (() -> Unit) -> Unit) {
     val state by viewModel.uiState
     HomeSelectionUI(
         topAppPackage = state.topAppPackage,
         bottomAppPackage = state.bottomAppPackage,
         onTopAppSelected = { viewModel.setTopApp(it) },
         onBottomAppSelected = { viewModel.setBottomApp(it) },
-        onNext = { navController.navigate("advanced_gestures") },
-        onPrev = { navController.popBackStack() },
+        onNext = { onNavigate { navController.navigate("advanced_gestures") } },
+        onPrev = { onNavigate { navController.popBackStack() } },
         isBasicFlow = false,
-        onSwitchToAdvanced = {}
+        onSwitchToAdvanced = {},
+        isNavigating = isNavigating
     )
 }
 
 @Composable
-fun AdvancedGestureScreen(navController: NavController, viewModel: OnboardingViewModel) {
+fun AdvancedGestureScreen(navController: NavController, viewModel: OnboardingViewModel, isNavigating: Boolean, onNavigate: (() -> Unit) -> Unit) {
     val state by viewModel.uiState
     var showInfoDialog by remember { mutableStateOf(false) }
 
@@ -235,24 +242,24 @@ fun AdvancedGestureScreen(navController: NavController, viewModel: OnboardingVie
                 Spacer(modifier = Modifier.height(24.dp))
 
                 Column(modifier = Modifier.padding(horizontal = 24.dp)) { 
-                    GestureRow("Single Press", state.singleHomeAction) { viewModel.setGestureAction(Gesture.SINGLE, it) }
-                    GestureRow("Double Tap", state.doubleHomeAction) { viewModel.setGestureAction(Gesture.DOUBLE, it) }
-                    GestureRow("Triple Tap", state.tripleHomeAction) { viewModel.setGestureAction(Gesture.TRIPLE, it) }
-                    GestureRow("Long Press", state.longHomeAction) { viewModel.setGestureAction(Gesture.LONG, it) }
+                    GestureRow("Single Press", state.singleHomeAction, isNavigating) { viewModel.setGestureAction(Gesture.SINGLE, it) }
+                    GestureRow("Double Tap", state.doubleHomeAction, isNavigating) { viewModel.setGestureAction(Gesture.DOUBLE, it) }
+                    GestureRow("Triple Tap", state.tripleHomeAction, isNavigating) { viewModel.setGestureAction(Gesture.TRIPLE, it) }
+                    GestureRow("Long Press", state.longHomeAction, isNavigating) { viewModel.setGestureAction(Gesture.LONG, it) }
                 }
             }
             
-            OutlinedButton(onClick = { navController.popBackStack() }, modifier = Modifier.align(Alignment.BottomStart).padding(bottom = 8.dp)) { Text("Back") }
-            IconButton(onClick = { showInfoDialog = true }, modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp)) { Icon(Icons.Default.Info, "Info", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
-            OutlinedButton(onClick = { viewModel.setHomeInterception(true); navController.navigate("advanced_dss") }, modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 8.dp)) { Text("Next") }
+            OutlinedButton(onClick = { onNavigate { navController.popBackStack() } }, modifier = Modifier.align(Alignment.BottomStart).padding(bottom = 8.dp), enabled = !isNavigating) { Text("Back") }
+            IconButton(onClick = { showInfoDialog = true }, modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp), enabled = !isNavigating) { Icon(Icons.Default.Info, "Info", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+            OutlinedButton(onClick = { onNavigate { viewModel.setHomeInterception(true); navController.navigate("advanced_dss") } }, modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 8.dp), enabled = !isNavigating) { Text("Next") }
         }
     }
 }
 
 @Composable
-fun GestureRow(label: String, currentAction: Action, onActionSelected: (Action) -> Unit) {
+fun GestureRow(label: String, currentAction: Action, isNavigating: Boolean, onActionSelected: (Action) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
-    Row(modifier = Modifier.fillMaxWidth().clickable { expanded = true }.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(modifier = Modifier.fillMaxWidth().clickable(enabled = !isNavigating) { expanded = true }.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(label, modifier = Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurface)
         Box {
             Text(text = actionLabel(currentAction), color = MaterialTheme.colorScheme.primary)
@@ -270,7 +277,7 @@ fun GestureRow(label: String, currentAction: Action, onActionSelected: (Action) 
 }
 
 @Composable
-fun AdvancedDssScreen(navController: NavController, viewModel: OnboardingViewModel) {
+fun AdvancedDssScreen(navController: NavController, viewModel: OnboardingViewModel, isNavigating: Boolean, onNavigate: (() -> Unit) -> Unit) {
     val context = LocalContext.current
     val state by viewModel.uiState
     var showInfoDialog by remember { mutableStateOf(false) }
@@ -313,19 +320,20 @@ fun AdvancedDssScreen(navController: NavController, viewModel: OnboardingViewMod
                 Button(
                     onClick = { toggleDss() }, 
                     modifier = Modifier.fillMaxWidth(0.7f),
-                    colors = buttonColors
+                    colors = buttonColors,
+                    enabled = !isNavigating
                 ) { Text(if (state.dssAutoStitch) "Disable DualShot" else "Enable DualShot") }
             }
             
-            OutlinedButton(onClick = { navController.popBackStack() }, modifier = Modifier.align(Alignment.BottomStart).padding(bottom = 8.dp)) { Text("Back") }
-            IconButton(onClick = { showInfoDialog = true }, modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp)) { Icon(Icons.Default.Info, "Info", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
-            OutlinedButton(onClick = { navController.navigate("advanced_set_default") }, modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 8.dp)) { Text("Next") }
+            OutlinedButton(onClick = { onNavigate { navController.popBackStack() } }, modifier = Modifier.align(Alignment.BottomStart).padding(bottom = 8.dp), enabled = !isNavigating) { Text("Back") }
+            IconButton(onClick = { showInfoDialog = true }, modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp), enabled = !isNavigating) { Icon(Icons.Default.Info, "Info", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+            OutlinedButton(onClick = { onNavigate { navController.navigate("advanced_set_default") } }, modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 8.dp), enabled = !isNavigating) { Text("Next") }
         }
     }
 }
 
 @Composable
-fun AdvancedSetDefaultHomeScreen(navController: NavController, viewModel: OnboardingViewModel, onFinish: () -> Unit) {
+fun AdvancedSetDefaultHomeScreen(navController: NavController, viewModel: OnboardingViewModel, onFinish: () -> Unit, isNavigating: Boolean, onNavigate: (() -> Unit) -> Unit) {
     val context = LocalContext.current
     val state by viewModel.uiState
     var showInfoDialog by remember { mutableStateOf(false) }
@@ -336,21 +344,33 @@ fun AdvancedSetDefaultHomeScreen(navController: NavController, viewModel: Onboar
     val SPECIAL_HOME_APPS = remember { setOf("com.android.launcher3", "com.odin.odinlauncher") }
     val specialAppSelected = state.topAppPackage in SPECIAL_HOME_APPS
     val defaultHomeMatchesSpecialApp = specialAppSelected && currentHomePkg == state.topAppPackage
+    
+    val homePickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        // Result doesn't matter, ON_RESUME will handle the state check.
+    }
 
-    fun commitPrefs() {
-        val finalInterception = !(state.topAppPackage == null && state.bottomAppPackage == null) && state.homeInterceptionActive
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        prefs.edit().apply {
-            putString(KEY_TOP_APP, state.topAppPackage)
-            putString(KEY_BOTTOM_APP, state.bottomAppPackage)
-            putBoolean(KEY_HOME_INTERCEPTION_ACTIVE, finalInterception)
-            putString(KEY_SINGLE_HOME_ACTION, state.singleHomeAction.name)
-            putString(KEY_DOUBLE_HOME_ACTION, state.doubleHomeAction.name)
-            putString(KEY_TRIPLE_HOME_ACTION, state.tripleHomeAction.name)
-            putString(KEY_LONG_HOME_ACTION, state.longHomeAction.name)
-            putBoolean(KEY_DSS_AUTO_STITCH, state.dssAutoStitch)
-            putInt(KEY_LAUNCH_FAILURE_COUNT, 0)
-        }.apply()
+    LaunchedEffect(Unit) {
+        val isValid = !specialAppSelected || defaultHomeMatchesSpecialApp
+        if(isValid) {
+            DiagnosticsLogger.logEvent("Onboarding", "VALID_CONFIG_DETECTED", "Committing Advanced prefs", context)
+            val finalInterception = !(state.topAppPackage == null && state.bottomAppPackage == null) && state.homeInterceptionActive
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            val success = prefs.edit().apply {
+                putString(KEY_TOP_APP, state.topAppPackage)
+                putString(KEY_BOTTOM_APP, state.bottomAppPackage)
+                putBoolean(KEY_HOME_INTERCEPTION_ACTIVE, finalInterception)
+                putString(KEY_SINGLE_HOME_ACTION, state.singleHomeAction.name)
+                putString(KEY_DOUBLE_HOME_ACTION, state.doubleHomeAction.name)
+                putString(KEY_TRIPLE_HOME_ACTION, state.tripleHomeAction.name)
+                putString(KEY_LONG_HOME_ACTION, state.longHomeAction.name)
+                putBoolean(KEY_DSS_AUTO_STITCH, state.dssAutoStitch)
+                putInt(KEY_LAUNCH_FAILURE_COUNT, 0)
+                putBoolean(KEY_ONBOARDING_COMPLETE, true)
+            }.commit()
+            DiagnosticsLogger.logEvent("Onboarding", "PREFS_COMMIT_END", "Success=$success", context)
+        } else {
+            DiagnosticsLogger.logEvent("Onboarding", "INVALID_CONFIG_DETECTED", "Skipping auto-commit for Advanced flow", context)
+        }
     }
 
     DisposableEffect(lifecycleOwner) {
@@ -410,26 +430,22 @@ fun AdvancedSetDefaultHomeScreen(navController: NavController, viewModel: Onboar
                 if (!defaultHomeMatchesSpecialApp) {
                     Button(
                         onClick = {
-                            commitPrefs()
-                            val intent = Intent(Settings.ACTION_HOME_SETTINGS).apply { flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK }
-                            context.startActivity(intent)
-                            onFinish()
-                        }, 
+                            val intent = Intent(Settings.ACTION_HOME_SETTINGS)
+                            homePickerLauncher.launch(intent)
+                        },
                         modifier = Modifier.fillMaxWidth(0.7f),
-                        colors = buttonColors
+                        colors = buttonColors,
+                        enabled = !isNavigating
                     ) { Text("Set Default Home") }
                 }
             }
             
-            OutlinedButton(onClick = { navController.popBackStack() }, modifier = Modifier.align(Alignment.BottomStart).padding(bottom = 8.dp)) { Text("Back") }
-            IconButton(onClick = { showInfoDialog = true }, modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp)) { Icon(Icons.Default.Info, "Info", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+            OutlinedButton(onClick = { onNavigate { navController.popBackStack() } }, modifier = Modifier.align(Alignment.BottomStart).padding(bottom = 8.dp), enabled = !isNavigating) { Text("Back") }
+            IconButton(onClick = { showInfoDialog = true }, modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp), enabled = !isNavigating) { Icon(Icons.Default.Info, "Info", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
             OutlinedButton(
-                onClick = { 
-                    commitPrefs()
-                    onFinish() 
-                }, 
+                onClick = { onNavigate { onFinish() } }, 
                 modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 8.dp),
-                enabled = !specialAppSelected || defaultHomeMatchesSpecialApp
+                enabled = (!specialAppSelected || defaultHomeMatchesSpecialApp) && !isNavigating
             ) { 
                 Text(if (specialAppSelected && defaultHomeMatchesSpecialApp) "Finish" else "Skip & Finish") 
             }

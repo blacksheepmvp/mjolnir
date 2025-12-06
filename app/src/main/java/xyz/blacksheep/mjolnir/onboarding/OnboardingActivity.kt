@@ -3,12 +3,14 @@ package xyz.blacksheep.mjolnir.onboarding
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
-import android.graphics.Color as AndroidColor
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -34,10 +36,12 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -52,11 +56,14 @@ import androidx.navigation.NavController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import xyz.blacksheep.mjolnir.KEY_ONBOARDING_COMPLETE
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import xyz.blacksheep.mjolnir.KEY_THEME
 import xyz.blacksheep.mjolnir.PREFS_NAME
 import xyz.blacksheep.mjolnir.settings.AppTheme
 import xyz.blacksheep.mjolnir.utils.DiagnosticsConfig
+import xyz.blacksheep.mjolnir.utils.DiagnosticsLogger
+import android.graphics.Color as AndroidColor
 
 class OnboardingActivity : ComponentActivity() {
 
@@ -165,32 +172,64 @@ private fun OnboardingTheme(
 fun OnboardingNavHost(viewModel: OnboardingViewModel) {
     val navController = rememberNavController()
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var isNavigating by remember { mutableStateOf(false) }
 
-    fun finishOnboarding() {
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        prefs.edit().putBoolean(KEY_ONBOARDING_COMPLETE, true).apply()
-        context.findActivity()?.finish()
+    fun onNavigate(block: () -> Unit) {
+        if (!isNavigating) {
+            isNavigating = true
+            block()
+            scope.launch {
+                delay(300)
+                isNavigating = false
+            }
+        }
     }
 
-    NavHost(navController = navController, startDestination = "entry") {
-        composable("entry") { EntryScreen(navController = navController) }
-        composable("basic_home_selection") { BasicHomeSelectionScreen(navController, viewModel) }
-        composable("basic_set_default") { BasicSetDefaultHomeScreen(navController, viewModel, onFinish = ::finishOnboarding) }
-        composable("advanced_permissions") { AdvancedPermissionScreen(navController) }
-        composable("advanced_accessibility") { AdvancedAccessibilityScreen(navController) }
-        composable("advanced_home_selection") { AdvancedHomeSelectionScreen(navController, viewModel) }
-        composable("advanced_gestures") { AdvancedGestureScreen(navController, viewModel) }
-        composable("advanced_dss") { AdvancedDssScreen(navController, viewModel) }
-        composable("advanced_set_default") { AdvancedSetDefaultHomeScreen(navController, viewModel, onFinish = ::finishOnboarding) }
-        composable("no_home") { NoHomeSetupScreen(navController, onFinish = ::finishOnboarding) }
+    fun finishOnboarding() {
+        DiagnosticsLogger.logEvent("Onboarding", "ON_FINISH_CALLED", "About to finish affinity", context)
+        context.findActivity()?.finishAffinity()
+        DiagnosticsLogger.logEvent("Onboarding", "FINISH_AFFINITY_CALLED", "(This might not be logged if process dies)", context)
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        NavHost(navController = navController, startDestination = "entry") {
+            composable("entry") { EntryScreen(navController = navController, onFinish = ::finishOnboarding, isNavigating = isNavigating, onNavigate = ::onNavigate) }
+            composable("basic_home_selection") { BasicHomeSelectionScreen(navController, viewModel, isNavigating = isNavigating, onNavigate = ::onNavigate) }
+            composable("basic_set_default") { BasicSetDefaultHomeScreen(navController, viewModel, onFinish = ::finishOnboarding, isNavigating = isNavigating, onNavigate = ::onNavigate) }
+            composable("advanced_permissions") { AdvancedPermissionScreen(navController, isNavigating = isNavigating, onNavigate = ::onNavigate) }
+            composable("advanced_accessibility") { AdvancedAccessibilityScreen(navController, isNavigating = isNavigating, onNavigate = ::onNavigate) }
+            composable("advanced_home_selection") { AdvancedHomeSelectionScreen(navController, viewModel, isNavigating = isNavigating, onNavigate = ::onNavigate) }
+            composable("advanced_gestures") { AdvancedGestureScreen(navController, viewModel, isNavigating = isNavigating, onNavigate = ::onNavigate) }
+            composable("advanced_dss") { AdvancedDssScreen(navController, viewModel, isNavigating = isNavigating, onNavigate = ::onNavigate) }
+            composable("advanced_set_default") { AdvancedSetDefaultHomeScreen(navController, viewModel, onFinish = ::finishOnboarding, isNavigating = isNavigating, onNavigate = ::onNavigate) }
+            composable("no_home") { NoHomeSetupScreen(navController, onFinish = ::finishOnboarding, isNavigating = isNavigating, onNavigate = ::onNavigate) }
+        }
+        
+        if (isNavigating) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = {}
+                    ),
+                color = Color.Transparent
+            ) {}
+        }
     }
 }
 
 @Composable
-fun EntryScreen(navController: NavController) {
+fun EntryScreen(navController: NavController, onFinish: () -> Unit, isNavigating: Boolean, onNavigate: (() -> Unit) -> Unit) {
     val context = LocalContext.current
     val diagnosticsEnabled = remember { mutableStateOf(DiagnosticsConfig.isEnabled(context)) }
     var showInfoDialog by remember { mutableStateOf(false) }
+
+    BackHandler(enabled = true) {
+        onNavigate(onFinish)
+    }
 
     val buttonColors = ButtonDefaults.buttonColors(
         containerColor = MaterialTheme.colorScheme.surfaceVariant,
@@ -242,17 +281,19 @@ fun EntryScreen(navController: NavController) {
                     horizontalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     Button(
-                        onClick = { navController.navigate("basic_home_selection") },
+                        onClick = { onNavigate { navController.navigate("basic_home_selection") } },
                         modifier = Modifier.weight(1f).height(90.dp),
                         colors = buttonColors,
-                        shape = MaterialTheme.shapes.large
+                        shape = MaterialTheme.shapes.large,
+                        enabled = !isNavigating
                     ) { Text("Basic\nHome Setup", textAlign = TextAlign.Center) }
                     
                     Button(
-                        onClick = { navController.navigate("advanced_permissions") },
+                        onClick = { onNavigate { navController.navigate("advanced_permissions") } },
                         modifier = Modifier.weight(1f).height(90.dp),
                         colors = buttonColors,
-                        shape = MaterialTheme.shapes.large
+                        shape = MaterialTheme.shapes.large,
+                        enabled = !isNavigating
                     ) { Text("Advanced\nHome Setup", textAlign = TextAlign.Center) }
                 }
             }
@@ -264,16 +305,20 @@ fun EntryScreen(navController: NavController) {
                 Switch(checked = diagnosticsEnabled.value, onCheckedChange = { isChecked ->
                     diagnosticsEnabled.value = isChecked
                     DiagnosticsConfig.setEnabled(context, isChecked)
-                })
+                }, enabled = !isNavigating)
                 Spacer(Modifier.width(8.dp))
                 Text("Capture Diagnostics", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
 
-            IconButton(onClick = { showInfoDialog = true }, modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 2.dp)) {
+            IconButton(onClick = { showInfoDialog = true }, modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp), enabled = !isNavigating) {
                 Icon(imageVector = Icons.Default.Info, contentDescription = "Info", tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
 
-            TextButton(onClick = { navController.navigate("no_home") }, modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 2.dp)) {
+            TextButton(
+                onClick = { onNavigate { navController.navigate("no_home") } }, 
+                modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 2.dp),
+                enabled = !isNavigating
+            ) {
                 Text("Skip", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelLarge)
             }
         }

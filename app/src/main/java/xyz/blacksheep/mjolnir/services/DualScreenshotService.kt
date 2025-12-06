@@ -5,6 +5,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.ClipData
 import android.content.ContentValues
 import android.content.Intent
 import android.content.pm.ServiceInfo
@@ -299,10 +300,11 @@ class DualScreenshotService : Service() {
         val shareIntent = Intent(Intent.ACTION_SEND).apply {
             type = "image/png"
             putExtra(Intent.EXTRA_STREAM, uri)
-            flags = Intent.FLAG_GRANT_READ_URI_PERMISSION
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            clipData = ClipData.newRawUri("DualShot", uri)
         }
         val sharePendingIntent = PendingIntent.getActivity(
-            this, 1, Intent.createChooser(shareIntent, "Share DualShot"), PendingIntent.FLAG_IMMUTABLE
+            this, 1, Intent.createChooser(shareIntent, "Share DualShot"), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
         // Update: "Delete Dual" now routes to ScreenshotActionActivity with a specific action

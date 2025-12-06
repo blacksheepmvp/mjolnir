@@ -1,9 +1,10 @@
 package xyz.blacksheep.mjolnir.onboarding
 
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -17,6 +18,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -34,7 +36,9 @@ import androidx.navigation.NavController
 @Composable
 fun NoHomeSetupScreen(
     navController: NavController,
-    onFinish: () -> Unit
+    onFinish: () -> Unit,
+    isNavigating: Boolean,
+    onNavigate: (() -> Unit) -> Unit
 ) {
     var showInfoDialog by remember { mutableStateOf(false) }
 
@@ -60,9 +64,9 @@ fun NoHomeSetupScreen(
                 Text("You can set up Mjolnir Home later from the main screen.", textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurface)
             }
 
-            OutlinedButton(onClick = { navController.popBackStack() }, modifier = Modifier.align(Alignment.BottomStart).padding(bottom = 8.dp)) { Text("Back") }
-            IconButton(onClick = { showInfoDialog = true }, modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp)) { Icon(Icons.Default.Info, "Info", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
-            OutlinedButton(onClick = onFinish, modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 8.dp)) { Text("Finish") }
+            OutlinedButton(onClick = { onNavigate { navController.popBackStack() } }, modifier = Modifier.align(Alignment.BottomStart).padding(bottom = 8.dp), enabled = !isNavigating) { Text("Back") }
+            IconButton(onClick = { showInfoDialog = true }, modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp), enabled = !isNavigating) { Icon(Icons.Default.Info, "Info", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+            OutlinedButton(onClick = { onNavigate { onFinish() } }, modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 8.dp), enabled = !isNavigating) { Text("Finish") }
         }
     }
 }

@@ -26,3 +26,11 @@ This file contains instructions for any developer or AI agent working on the Mjo
 
 *   **Concise Communication:** Do not over-apologize. Statements like "I apologize" or "You're correct" are unnecessary. Focus on direct, useful communication that advances the project.
 *   **Memory Wipe Indicator:** After a memory wipe, your very first response must begin with the phrase "Hello World!"
+
+#### **5. Standard Operating Procedures (SOPs)**
+
+*   **Wait for Explicit Instructions:** Do not perform any actions, such as file modifications, unless explicitly instructed. Information provided by the user is for context-building, not for inferring tasks.
+*   **One Action at a Time:** Break down complex tasks into smaller, sequential actions. Work on one file at a time to minimize errors and avoid timeouts, especially when sessions are long or files are large.
+*   **Prefer Code Snippets for Edits:** Do not edit files directly. Your success rate is much higher when you provide code snippets and instructions for the user to implement. Direct edits often result in timeouts.
+*   **Handle `SharedUI.kt` with Caution:** This file is exceptionally large. Reading or modifying it has a high risk of causing a timeout. Avoid combining access to this file with other complex actions.
+*   **Collaborate with ChatGPT:** Treat ChatGPT as a collaborator and a source of ideas. It does not have access to the codebase, so its suggestions are conceptual. You must always verify and validate its proposals against the actual project code. Be vigilant for suggestions that would duplicate existing functions or constants and adapt them to fit the project's structure.

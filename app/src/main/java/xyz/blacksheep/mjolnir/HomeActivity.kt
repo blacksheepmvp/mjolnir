@@ -1,5 +1,6 @@
 package xyz.blacksheep.mjolnir
 
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -7,6 +8,7 @@ import android.content.pm.ResolveInfo
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.text.TextUtils
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.core.content.edit
@@ -113,13 +115,18 @@ class HomeActivity : ComponentActivity() {
     }
 
     private fun isAccessibilityServiceEnabled(): Boolean {
-        val service = "${packageName}/${HomeKeyInterceptorService::class.java.canonicalName}"
-        return try {
-            val enabledServices = Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)
-            enabledServices?.contains(service, ignoreCase = true) == true
-        } catch (e: Exception) {
-            false
+        val expectedComponentName = ComponentName(this, HomeKeyInterceptorService::class.java)
+        val enabledServicesSetting = Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: return false
+        val colonSplitter = TextUtils.SimpleStringSplitter(':')
+        colonSplitter.setString(enabledServicesSetting)
+        while (colonSplitter.hasNext()) {
+            val componentNameString = colonSplitter.next()
+            val enabledComponent = ComponentName.unflattenFromString(componentNameString)
+            if (enabledComponent != null && enabledComponent == expectedComponentName) {
+                return true
+            }
         }
+        return false
     }
 
     private fun wipeConfigAndLaunchOnboarding() {

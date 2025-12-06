@@ -6,14 +6,16 @@ import android.content.pm.PackageManager
 import android.content.pm.ResolveInfo
 import android.os.Build
 import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -45,6 +47,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -56,26 +59,33 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.navigation.NavController
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import xyz.blacksheep.mjolnir.KEY_BOTTOM_APP
 import xyz.blacksheep.mjolnir.KEY_HOME_INTERCEPTION_ACTIVE
 import xyz.blacksheep.mjolnir.KEY_LAUNCH_FAILURE_COUNT
+import xyz.blacksheep.mjolnir.KEY_ONBOARDING_COMPLETE
 import xyz.blacksheep.mjolnir.KEY_TOP_APP
 import xyz.blacksheep.mjolnir.PREFS_NAME
 import xyz.blacksheep.mjolnir.settings.LauncherApp
 import xyz.blacksheep.mjolnir.settings.getLaunchableApps
 import xyz.blacksheep.mjolnir.settings.getPackageIcon
 import xyz.blacksheep.mjolnir.settings.rememberDrawablePainter
+import xyz.blacksheep.mjolnir.utils.DiagnosticsLogger
 
 
 @Composable
 fun BasicHomeSelectionScreen(
     navController: NavController,
-    viewModel: OnboardingViewModel
+    viewModel: OnboardingViewModel,
+    isNavigating: Boolean,
+    onNavigate: (() -> Unit) -> Unit
 ) {
     val state by viewModel.uiState
     val SPECIAL_HOME_APPS = remember { setOf("com.android.launcher3", "com.odin.odinlauncher") }
@@ -92,12 +102,15 @@ fun BasicHomeSelectionScreen(
         onTopAppSelected = { viewModel.setTopApp(it) },
         onBottomAppSelected = { viewModel.setBottomApp(it) },
         onNext = {
-            viewModel.setHomeInterception(false)
-            navController.navigate("basic_set_default")
+            onNavigate {
+                viewModel.setHomeInterception(false)
+                navController.navigate("basic_set_default")
+            }
         },
-        onPrev = { navController.popBackStack() },
+        onPrev = { onNavigate { navController.popBackStack() } },
         isBasicFlow = true,
-        onSwitchToAdvanced = { navController.navigate("advanced_permissions") }
+        onSwitchToAdvanced = { onNavigate { navController.navigate("advanced_permissions") } },
+        isNavigating = isNavigating
     )
 }
 
@@ -111,7 +124,8 @@ fun HomeSelectionUI(
     onNext: () -> Unit,
     onPrev: () -> Unit,
     isBasicFlow: Boolean = false,
-    onSwitchToAdvanced: () -> Unit = {}
+    onSwitchToAdvanced: () -> Unit = {},
+    isNavigating: Boolean
 ) {
     val context = LocalContext.current
     var showAllApps by remember { mutableStateOf(false) }
@@ -192,7 +206,7 @@ fun HomeSelectionUI(
                         modifier = Modifier.size(width = topCardWidth, height = cardHeight),
                         app = selectedTopApp,
                         label = if (isLoading) "Loading..." else "Select Top Screen App",
-                        onClick = { topExpanded = true },
+                        onClick = { if (!isNavigating) topExpanded = true },
                         backgroundColor = cardBgColor,
                         contentColor = cardContentColor,
                         shape = MaterialTheme.shapes.large
@@ -228,7 +242,7 @@ fun HomeSelectionUI(
                         modifier = Modifier.size(width = bottomCardWidth, height = cardHeight),
                         app = selectedBottomApp,
                         label = if (isLoading) "Loading..." else "Select Bottom Screen App",
-                        onClick = { bottomExpanded = true },
+                        onClick = { if (!isNavigating) bottomExpanded = true },
                         backgroundColor = cardBgColor,
                         contentColor = cardContentColor,
                         shape = MaterialTheme.shapes.large
@@ -250,9 +264,9 @@ fun HomeSelectionUI(
                 Spacer(Modifier.height(80.dp))
             }
 
-            OutlinedButton(onClick = onPrev, modifier = Modifier.align(Alignment.BottomStart).padding(bottom = 8.dp)) { Text("Back") }
-            IconButton(onClick = { showInfoDialog = true }, modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp)) { Icon(Icons.Default.Info, "Info", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
-            OutlinedButton(onClick = onNext, modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 8.dp), enabled = topAppPackage != null || bottomAppPackage != null) { Text("Next") }
+            OutlinedButton(onClick = onPrev, modifier = Modifier.align(Alignment.BottomStart).padding(bottom = 8.dp), enabled = !isNavigating) { Text("Back") }
+            IconButton(onClick = { showInfoDialog = true }, modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp), enabled = !isNavigating) { Icon(Icons.Default.Info, "Info", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+            OutlinedButton(onClick = onNext, modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 8.dp), enabled = !isNavigating && (topAppPackage != null || bottomAppPackage != null)) { Text("Next") }
 
             FloatingActionButton(
                 onClick = { showAllApps = !showAllApps },
@@ -271,18 +285,50 @@ fun HomeSelectionUI(
 fun BasicSetDefaultHomeScreen(
     navController: NavController,
     viewModel: OnboardingViewModel,
-    onFinish: () -> Unit
+    onFinish: () -> Unit,
+    isNavigating: Boolean,
+    onNavigate: (() -> Unit) -> Unit
 ) {
     val context = LocalContext.current
     val state by viewModel.uiState
+    val lifecycleOwner = LocalLifecycleOwner.current
+
     var currentHome by remember { mutableStateOf("Checking...") }
     val isMjolnirDefault by remember(currentHome) { mutableStateOf(currentHome.contains("Mjolnir", ignoreCase = true)) }
     
     val SPECIAL_HOME_APPS = remember { setOf("com.android.launcher3", "com.odin.odinlauncher") }
     val hasInvalidSpecialApp = state.topAppPackage in SPECIAL_HOME_APPS
 
+    val homePickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        // Result doesn't matter, ON_RESUME will handle the state check.
+    }
+
     LaunchedEffect(Unit) {
-        currentHome = getCurrentDefaultHome(context)
+        val isValid = !hasInvalidSpecialApp
+        if (isValid) {
+            DiagnosticsLogger.logEvent("Onboarding", "VALID_CONFIG_DETECTED", "Committing Basic prefs", context)
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            val success = prefs.edit() 
+                .putString(KEY_TOP_APP, state.topAppPackage)
+                .putString(KEY_BOTTOM_APP, state.bottomAppPackage)
+                .putBoolean(KEY_HOME_INTERCEPTION_ACTIVE, false)
+                .putInt(KEY_LAUNCH_FAILURE_COUNT, 0)
+                .putBoolean(KEY_ONBOARDING_COMPLETE, true)
+                .commit()
+            DiagnosticsLogger.logEvent("Onboarding", "PREFS_COMMIT_END", "Success=$success", context)
+        } else {
+            DiagnosticsLogger.logEvent("Onboarding", "INVALID_CONFIG_DETECTED", "Skipping auto-commit for Basic flow", context)
+        }
+    }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                currentHome = getCurrentDefaultHome(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     Scaffold(containerColor = Color.Transparent) { padding ->
@@ -307,33 +353,26 @@ fun BasicSetDefaultHomeScreen(
                         Spacer(modifier = Modifier.height(32.dp))
                         Button(
                             onClick = {
-                                val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                                prefs.edit() 
-                                    .putString(KEY_TOP_APP, state.topAppPackage)
-                                    .putString(KEY_BOTTOM_APP, state.bottomAppPackage)
-                                    .putBoolean(KEY_HOME_INTERCEPTION_ACTIVE, false)
-                                    .putInt(KEY_LAUNCH_FAILURE_COUNT, 0)
-                                    .apply()
-                                val intent = Intent(Settings.ACTION_HOME_SETTINGS).apply { flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK }
-                                context.startActivity(intent)
-                                onFinish()
+                                val intent = Intent(Settings.ACTION_HOME_SETTINGS)
+                                homePickerLauncher.launch(intent)
                             },
                             modifier = Modifier.fillMaxWidth(0.7f),
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = MaterialTheme.colorScheme.surfaceVariant,
                                 contentColor = MaterialTheme.colorScheme.onBackground
-                            )
+                            ),
+                            enabled = !isNavigating
                         ) { Text("Set Default Home") }
                     }
                 }
             }
             
-            OutlinedButton(onClick = { navController.popBackStack() }, modifier = Modifier.align(Alignment.BottomStart).padding(bottom = 8.dp)) { Text("Back") }
+            OutlinedButton(onClick = { onNavigate { navController.popBackStack() } }, modifier = Modifier.align(Alignment.BottomStart).padding(bottom = 8.dp), enabled = !isNavigating) { Text("Back") }
             
             OutlinedButton(
-                onClick = onFinish, 
+                onClick = { onNavigate { onFinish() } }, 
                 modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 8.dp),
-                enabled = !hasInvalidSpecialApp && isMjolnirDefault // Disable if invalid OR if Mjolnir is not default
+                enabled = !isNavigating && !hasInvalidSpecialApp
             ) { 
                 Text(if (isMjolnirDefault) "Finish" else "Skip & Finish") 
             }
@@ -372,7 +411,7 @@ fun AppSlotCard(
     } else { Modifier }
 
     Surface(
-        modifier = modifier.then(borderModifier).clip(shape).clickable { onClick() },
+        modifier = modifier.then(borderModifier).clip(shape).clickable(onClick = onClick),
         shape = shape,
         color = backgroundColor,
         contentColor = contentColor,
