@@ -6,8 +6,10 @@ import android.content.pm.PackageManager
 import android.content.pm.ResolveInfo
 import android.os.Build
 import android.provider.Settings
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -154,6 +156,35 @@ fun HomeSelectionUI(
         launcherApps = withContext(Dispatchers.IO) { getLaunchableApps(context, showAll = showAllApps) }
         isLoading = false
     }
+    
+    // --- MANUAL CHANGE START: Requirement 1 ---
+    // In Basic-like conditions (Basic Flow), do NOT show <Nothing>.
+    // Basic = frontend/frontend only.
+    val displayedApps = remember(launcherApps, isBasicFlow) {
+        if (isBasicFlow) {
+            launcherApps.filter { it.packageName != "NOTHING" }
+        } else {
+            launcherApps
+        }
+    }
+    // --- MANUAL CHANGE END ---
+
+    // --- NEW: Helper to prevent duplicates by swapping ---
+    fun onSelectApp(pkg: String?, isTop: Boolean) {
+        if (isTop) {
+            if (pkg != null && pkg == bottomAppPackage) {
+                // Swap: Set Bottom to current Top
+                onBottomAppSelected(topAppPackage)
+            }
+            onTopAppSelected(pkg)
+        } else {
+            if (pkg != null && pkg == topAppPackage) {
+                // Swap: Set Top to current Bottom
+                onTopAppSelected(bottomAppPackage)
+            }
+            onBottomAppSelected(pkg)
+        }
+    }
 
     val SPECIAL_HOME_APPS = remember { setOf("com.android.launcher3", "com.odin.odinlauncher") }
 
@@ -185,14 +216,16 @@ fun HomeSelectionUI(
             text = { Text("In order to use ${pendingSpecialApp?.label ?: "this app"} here, you need to:\n• Run the advanced home setup\n• Set ${pendingSpecialApp?.label ?: "this app"} as your default home\n\nWould you like to switch to advanced?") },
             confirmButton = {
                 TextButton(onClick = {
-                    onTopAppSelected(pendingSpecialApp?.packageName)
+                    // CHANGED: Use onSelectApp to handle swap
+                    onSelectApp(pendingSpecialApp?.packageName, isTop = true)
                     onSwitchToAdvanced()
                     showSpecialAppDialog = false
                 }) { Text("Yes") }
             },
             dismissButton = {
                 TextButton(onClick = {
-                    onTopAppSelected(null) 
+                    // CHANGED: Use onSelectApp to handle swap
+                    onSelectApp(null, isTop = true) 
                     showSpecialAppDialog = false
                 }) { Text("No") }
             }
@@ -227,7 +260,7 @@ fun HomeSelectionUI(
                         onDismissRequest = { topExpanded = false },
                         modifier = Modifier.background(MaterialTheme.colorScheme.surfaceContainerHigh).heightIn(max = screenHeight * 0.6f)
                     ) {
-                        launcherApps.forEach { app ->
+                        displayedApps.forEach { app ->
                             DropdownMenuItem(
                                 text = { Text(app.label) },
                                 leadingIcon = { Image(painter = rememberDrawablePainter(app.launchIntent.getPackageIcon()), contentDescription = null, modifier = Modifier.size(24.dp)) },
@@ -237,7 +270,8 @@ fun HomeSelectionUI(
                                         pendingSpecialApp = app
                                         showSpecialAppDialog = true
                                     } else {
-                                        onTopAppSelected(pkg)
+                                        // CHANGED: Use onSelectApp
+                                        onSelectApp(pkg, isTop = true)
                                     }
                                     topExpanded = false
                                 }
@@ -263,11 +297,16 @@ fun HomeSelectionUI(
                         onDismissRequest = { bottomExpanded = false },
                         modifier = Modifier.background(MaterialTheme.colorScheme.surfaceContainerHigh).heightIn(max = screenHeight * 0.6f)
                     ) {
-                        launcherApps.filterNot { it.packageName in SPECIAL_HOME_APPS }.forEach { app ->
+                        displayedApps.filterNot { it.packageName in SPECIAL_HOME_APPS }.forEach { app ->
                             DropdownMenuItem(
                                 text = { Text(app.label) },
                                 leadingIcon = { Image(painter = rememberDrawablePainter(app.launchIntent.getPackageIcon()), contentDescription = null, modifier = Modifier.size(24.dp)) },
-                                onClick = { onBottomAppSelected(if (app.packageName == "NOTHING") null else app.packageName); bottomExpanded = false }
+                                // CHANGED: Use onSelectApp
+                                onClick = { 
+                                    val pkg = if (app.packageName == "NOTHING") null else app.packageName
+                                    onSelectApp(pkg, isTop = false)
+                                    bottomExpanded = false 
+                                }
                             )
                         }
                     }
@@ -280,7 +319,53 @@ fun HomeSelectionUI(
 
             OutlinedButton(onClick = onPrev, modifier = Modifier.align(Alignment.BottomStart).padding(bottom = 8.dp), enabled = !isNavigating) { Text("Back") }
             IconButton(onClick = { showInfoDialog = true }, modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp), enabled = !isNavigating) { Icon(Icons.Default.Info, "Info", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
-            OutlinedButton(onClick = onNext, modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 8.dp), enabled = !isNavigating && (topAppPackage != null || bottomAppPackage != null)) { Text("Next") }
+            
+            // --- CHANGED: Next Button Logic (Trap Click in Basic Mode & Duplicate Check) ---
+            val isDuplicate = topAppPackage != null && topAppPackage == bottomAppPackage
+            val isBasicComplete = topAppPackage != null && bottomAppPackage != null
+            val isAdvancedComplete = topAppPackage != null || bottomAppPackage != null
+
+            val isConfigValid = !isDuplicate && if (isBasicFlow) isBasicComplete else isAdvancedComplete
+
+            val shouldTrapClick = isBasicFlow && !isConfigValid
+            val isButtonEnabled = !isNavigating && (isConfigValid || shouldTrapClick)
+
+            val nextColors = if (shouldTrapClick) {
+                ButtonDefaults.outlinedButtonColors(
+                    contentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                )
+            } else {
+                ButtonDefaults.outlinedButtonColors()
+            }
+            
+            val nextBorder = if (shouldTrapClick) {
+                BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))
+            } else {
+                ButtonDefaults.outlinedButtonBorder
+            }
+
+            OutlinedButton(
+                onClick = { 
+                    if (isConfigValid) {
+                        onNext() 
+                    } else if (shouldTrapClick) {
+                        // Basic Mode: Toast if missing selection
+                        val msg = when {
+                            isDuplicate -> "You cannot select the same app for both screens."
+                            topAppPackage == null -> "Please select a top screen app."
+                            bottomAppPackage == null -> "Please select a bottom screen app."
+                            else -> "Incomplete configuration."
+                        }
+                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                    }
+                }, 
+                modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 8.dp), 
+                enabled = isButtonEnabled,
+                colors = nextColors,
+                border = nextBorder
+            ) { 
+                Text("Next") 
+            }
 
             // Top-right controls
             Row(
@@ -403,9 +488,10 @@ fun BasicSetDefaultHomeScreen(
             OutlinedButton(
                 onClick = { onNavigate { onFinish() } }, 
                 modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 8.dp),
-                enabled = !isNavigating && !hasInvalidSpecialApp
+                // CHANGED: Force user to set Mjolnir as default in Basic Mode
+                enabled = !isNavigating && !hasInvalidSpecialApp && isMjolnirDefault
             ) { 
-                Text(if (isMjolnirDefault) "Finish" else "Skip & Finish") 
+                Text("Finish") 
             }
         }
     }

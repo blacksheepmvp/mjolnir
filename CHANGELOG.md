@@ -2,6 +2,77 @@
 
 All notable changes to this project will be documented in this file.
 
+---
+
+# Mjolnir v0.2.6a - The "Safety" Hotfix
+
+This release is focused entirely on fixing bugs, closing loopholes, and improving the safety and stability of the onboarding process.
+
+## 1. Panic & State Handlers
+- **Invalid Basic Mode Detection**: Mjolnir now detects "Bottomless Pit" states (e.g., Frontend Top, Nothing Bottom) in Basic Mode at startup. Invalid configs are automatically wiped, and the user is routed back to Onboarding.
+- **Advanced Mode Save Fix**: Fixed a critical bug where settings for certain Advanced configurations (e.g., "Nothing" Bottom) were not saved on the final Onboarding screen. Configuration is now saved reliably when requirements are met.
+
+## 2. Onboarding Flow Hardening
+- **Strict Basic Mode**: The "Next" button on the app selection screen is now disabled until **both** Top and Bottom apps are selected. A toast message will guide the user if they try to proceed with an incomplete selection.
+- **No More Skipping**: The "Skip" buttons on the Notification and Accessibility permission screens have been removed. Users are now required to grant these permissions to proceed with Advanced setup.
+- **Duplicate App Prevention**: Re-implemented the "swap" logic in the Onboarding app picker. Selecting an app that is already in the other slot will now correctly swap the two apps instead of creating a duplicate configuration.
+- **Correct Default Logic (Advanced)**: The final "Set Default Home" screen in the Advanced flow now has corrected logic:
+  - It correctly allows **Any** default home for standard dual-app setups.
+  - It correctly enforces **Quickstep** as the default when the bottom screen is set to `<Nothing>`.
+
+## 3. UI Fixes
+- **Formatted Changelogs**: The "What's New" dialog now correctly parses and displays Markdown formatting, making the changelogs readable.
+- **Safer Gesture Defaults**: New installations or reset configurations will now default to safer gestures (Single: Both, Double: Top, Triple: Recents, Long: Bottom) instead of "None".
+
+---
+
+### **Features**
+
+* New **Onboarding 2.0** with clearer setup flow and improved reliability.
+* **DualShot**: When enabled, taking a bottom screenshot automatically captures + stitches the top screen.
+* Added **Basic Home Mode** for users who prefer a zero-permissions setup.
+* New **“Default Home”** action available for Home-button behavior.
+* **Quickstep** and **OdinLauncher** supported when used in allowed configurations.
+
+---
+
+### **UI / UX**
+
+* Updated onboarding screens with rewritten text and clearer guidance.
+* Home-Button Behavior screen changed from a list to a **2×4 grid** layout.
+* Action pickers now display **icons**, including app icons for Top/Bottom apps.
+* Improved **DualShot** status line with clearer “Active / Inactive” indicators.
+* Main menu updated:
+  • “Initialize Mjolnir Home” → **“Home Setup”**
+  • Tools reorganized for clarity
+* **Create Steam Files** now consolidates all Steam-related tools into one entry with a selection dialog.
+* Added **“What’s New”** info bubble at the bottom-center.
+* Small visual polish across menus, defaults, and toggles.
+
+---
+
+### **Bug Fixes**
+
+(Pre-existing issues resolved in this version)
+
+* Fixed Home-button actions occasionally targeting the wrong screen.
+* Quick tiles and persistent notification now stay in sync.
+* Default app blacklist now appears correctly on first load.
+* Fixed a case where Mjolnir required a restart after onboarding.
+* DualShot permission prompt now reliably appears when needed.
+* Fixed onboarding screens occasionally freezing or failing to reopen the menu.
+* Corrected behavior when returning from the system “Default Home” picker on the Thor.
+
+---
+
+### **Misc**
+
+* Diagnostics logging improved and made more consistent.
+* Added version-tracking preference for future update-notices.
+* Various stability, responsiveness, and performance improvements.
+
+---
+
 ## [0.2.3] - 2024-11-17
 
 ### 🔧 Major Fixes & Stability Improvements

@@ -149,7 +149,11 @@ fun AdvancedPermissionScreen(navController: NavController, isNavigating: Boolean
 
             OutlinedButton(onClick = { onNavigate { navController.popBackStack() } }, modifier = Modifier.align(Alignment.BottomStart).padding(bottom = 8.dp), enabled = !isNavigating) { Text("Back") }
             IconButton(onClick = { showInfoDialog = true }, modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp), enabled = !isNavigating) { Icon(Icons.Default.Info, "Info", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
-            OutlinedButton(onClick = { onNavigate { navController.navigate("advanced_accessibility") } }, modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 8.dp), enabled = !isNavigating) { Text("Next") }
+            OutlinedButton(
+                onClick = { onNavigate { navController.navigate("advanced_accessibility") } }, 
+                modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 8.dp), 
+                enabled = !isNavigating && hasPermission
+            ) { Text("Next") }
         }
     }
 }
@@ -214,7 +218,11 @@ fun AdvancedAccessibilityScreen(navController: NavController, isNavigating: Bool
 
             OutlinedButton(onClick = { onNavigate { navController.popBackStack() } }, modifier = Modifier.align(Alignment.BottomStart).padding(bottom = 8.dp), enabled = !isNavigating) { Text("Back") }
             IconButton(onClick = { showInfoDialog = true }, modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp), enabled = !isNavigating) { Icon(Icons.Default.Info, "Info", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
-            OutlinedButton(onClick = { onNavigate { navController.navigate("advanced_home_selection") } }, modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 8.dp), enabled = !isNavigating) { Text(if (isEnabled) "Next" else "Skip") }
+            OutlinedButton(
+                onClick = { onNavigate { navController.navigate("advanced_home_selection") } }, 
+                modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 8.dp), 
+                enabled = !isNavigating && isEnabled
+            ) { Text("Next") }
         }
     }
 }
@@ -588,25 +596,39 @@ fun AdvancedSetDefaultHomeScreen(navController: NavController, viewModel: Onboar
     var currentHomeLabel by remember { mutableStateOf("Checking...") }
     val lifecycleOwner = LocalLifecycleOwner.current
 
-    val SPECIAL_HOME_APPS = remember { setOf("com.android.launcher3", "com.odin.odinlauncher") }
-    val specialAppSelected = state.topAppPackage in SPECIAL_HOME_APPS
-    val defaultHomeMatchesSpecialApp = specialAppSelected && currentHomePkg == state.topAppPackage
-    
+    // --- REVISED LOGIC BLOCK ---
+    val QUICKSTEP_PKG = "com.android.launcher3"
+    val SPECIAL_HOME_APPS = remember { setOf(QUICKSTEP_PKG, "com.odin.odinlauncher") }
+
+    // 1. Determine if a specific default is REQUIRED
+    val requiredDefaultPkg: String? = remember(state.topAppPackage, state.bottomAppPackage) {
+        when {
+            state.bottomAppPackage == null -> QUICKSTEP_PKG
+            state.topAppPackage in SPECIAL_HOME_APPS -> state.topAppPackage
+            else -> null // No specific default is required
+        }
+    }
+
+    // 2. Check if the current default matches the requirement (if one exists)
+    val requirementMet = (requiredDefaultPkg == null) || (currentHomePkg == requiredDefaultPkg)
+
+    // 3. Define UI strings and states
+    val headingText = if (requirementMet && requiredDefaultPkg != null) "All Done!" else "Default Home App"
+    val showSetDefaultButton = !requirementMet || requiredDefaultPkg == null
+    val finishButtonText = if (requirementMet) "Finish" else "Skip & Finish"
+    val isFinishButtonEnabled = !isNavigating && requirementMet
+
     val homePickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
         // Result doesn't matter, ON_RESUME will handle the state check.
     }
 
-    LaunchedEffect(Unit) {
-        val isValid = !specialAppSelected || defaultHomeMatchesSpecialApp
-        if(isValid) {
-            DiagnosticsLogger.logEvent("Onboarding", "VALID_CONFIG_DETECTED", "Committing Advanced prefs", context)
+    // This effect will AUTO-SAVE only when a specific requirement is met.
+    LaunchedEffect(requirementMet) {
+        if (requirementMet && requiredDefaultPkg != null) {
+            DiagnosticsLogger.logEvent("Onboarding", "AUTO_SAVE_VALID_CONFIG", "Committing Advanced prefs", context)
             val finalInterception = !(state.topAppPackage == null && state.bottomAppPackage == null) && state.homeInterceptionActive
             val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            
-            // Check if Focus Lock should be auto-enabled
-            val autoEnableFocusLock = !state.topAppPackage.isNullOrEmpty() && state.bottomAppPackage.isNullOrEmpty()
-            
-            val success = prefs.edit().apply {
+            prefs.edit().apply {
                 putString(KEY_TOP_APP, state.topAppPackage)
                 putString(KEY_BOTTOM_APP, state.bottomAppPackage)
                 putBoolean(KEY_HOME_INTERCEPTION_ACTIVE, finalInterception)
@@ -617,11 +639,8 @@ fun AdvancedSetDefaultHomeScreen(navController: NavController, viewModel: Onboar
                 putBoolean(KEY_DSS_AUTO_STITCH, state.dssAutoStitch)
                 putInt(KEY_LAUNCH_FAILURE_COUNT, 0)
                 putBoolean(KEY_ONBOARDING_COMPLETE, true)
-                putBoolean(KEY_ENABLE_FOCUS_LOCK_WORKAROUND, true) // Always default to true
+                putBoolean(KEY_ENABLE_FOCUS_LOCK_WORKAROUND, true)
             }.commit()
-            DiagnosticsLogger.logEvent("Onboarding", "PREFS_COMMIT_END", "Success=$success", context)
-        } else {
-            DiagnosticsLogger.logEvent("Onboarding", "INVALID_CONFIG_DETECTED", "Skipping auto-commit for Advanced flow", context)
         }
     }
 
@@ -646,11 +665,11 @@ fun AdvancedSetDefaultHomeScreen(navController: NavController, viewModel: Onboar
             onDismissRequest = { showInfoDialog = false },
             containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
             title = { Text("Default Home") },
-            text = { 
+            text = {
                 Text(
-                    "Your Default Home app is what you boot into and what the 'Default Home' gesture launches.\n\n" +
-                    "IMPORTANT: If you chose a special Launcher (like Quickstep or Odin), you MUST set it as your Default Home here for Mjolnir to work correctly."
-                ) 
+                    "Your Default Home app is what you boot into and what the 'Default Home' gesture launches.\\n\\n" +
+                            "IMPORTANT: If you chose a special Launcher (like Quickstep or Odin), you MUST set it as your Default Home here for Mjolnir to work correctly."
+                )
             },
             confirmButton = { TextButton(onClick = { showInfoDialog = false }) { Text("Got it") } }
         )
@@ -658,27 +677,33 @@ fun AdvancedSetDefaultHomeScreen(navController: NavController, viewModel: Onboar
 
     Scaffold(containerColor = Color.Transparent) { padding ->
         Box(modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp)) {
-            Column(modifier = Modifier.align(Alignment.Center).fillMaxWidth(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+            Column(
+                modifier = Modifier.align(Alignment.Center).fillMaxWidth(),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
                 Text(
-                    text = if (defaultHomeMatchesSpecialApp) "All Done!" else "Default Home App", // Changed from "Finally..."
+                    text = headingText,
                     style = MaterialTheme.typography.headlineMedium,
                     color = MaterialTheme.colorScheme.onBackground,
                     textAlign = TextAlign.Center
                 )
                 Spacer(modifier = Modifier.height(16.dp))
-                
-                if (specialAppSelected && !defaultHomeMatchesSpecialApp) {
-                    Text("You must set '${getAppName(context, state.topAppPackage)}' as default to continue.", textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurface)
-                } else if (specialAppSelected && defaultHomeMatchesSpecialApp) {
+
+                // --- Corrected UI Text Logic ---
+                if (requiredDefaultPkg != null && !requirementMet) {
+                    val targetLabel = getAppName(context, requiredDefaultPkg)
+                    Text("You must set '$targetLabel' as default to continue.", textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurface)
+                } else if (requirementMet && requiredDefaultPkg != null) {
                     Text("Setup complete. Tap 'Finish' to exit.", textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurface)
-                } else {
-                    Text("Choose your default Home app to complete setup.", textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurface)
+                } else { // This is the "Any Default" path
+                    Text("Optionally, set your default Home app.", textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurface)
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))
                 if (currentHomePkg != null) {
                     val pm = context.packageManager
-                    val drawable = remember(currentHomePkg) { try { pm.getApplicationIcon(currentHomePkg!!) } catch(e: Exception) { null } }
+                    val drawable = remember(currentHomePkg) { try { pm.getApplicationIcon(currentHomePkg!!) } catch (e: Exception) { null } }
                     Image(
                         painter = rememberDrawablePainter(drawable),
                         contentDescription = null,
@@ -689,10 +714,9 @@ fun AdvancedSetDefaultHomeScreen(navController: NavController, viewModel: Onboar
                 Text("Current Default: $currentHomeLabel", textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
                 Spacer(modifier = Modifier.height(32.dp))
 
-                if (!defaultHomeMatchesSpecialApp) {
+                if (showSetDefaultButton) {
                     Button(
                         onClick = {
-                            // FIX: Wrap string action in Intent()
                             val intent = Intent(Settings.ACTION_HOME_SETTINGS)
                             homePickerLauncher.launch(intent)
                         },
@@ -702,15 +726,37 @@ fun AdvancedSetDefaultHomeScreen(navController: NavController, viewModel: Onboar
                     ) { Text("Set Default Home") }
                 }
             }
-            
+
             OutlinedButton(onClick = { onNavigate { navController.popBackStack() } }, modifier = Modifier.align(Alignment.BottomStart).padding(bottom = 8.dp), enabled = !isNavigating) { Text("Back") }
             IconButton(onClick = { showInfoDialog = true }, modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp), enabled = !isNavigating) { Icon(Icons.Default.Info, "Info", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+
             OutlinedButton(
-                onClick = { onNavigate { onFinish() } }, 
+                onClick = {
+                    // When user clicks finish/skip, manually commit the state if no requirement was needed.
+                    if (requiredDefaultPkg == null) {
+                        DiagnosticsLogger.logEvent("Onboarding", "MANUAL_SAVE_ANY_DEFAULT", "Committing Advanced prefs", context)
+                        val finalInterception = !(state.topAppPackage == null && state.bottomAppPackage == null) && state.homeInterceptionActive
+                        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                        prefs.edit().apply {
+                            putString(KEY_TOP_APP, state.topAppPackage)
+                            putString(KEY_BOTTOM_APP, state.bottomAppPackage)
+                            putBoolean(KEY_HOME_INTERCEPTION_ACTIVE, finalInterception)
+                            putString(KEY_SINGLE_HOME_ACTION, state.singleHomeAction.name)
+                            putString(KEY_DOUBLE_HOME_ACTION, state.doubleHomeAction.name)
+                            putString(KEY_TRIPLE_HOME_ACTION, state.tripleHomeAction.name)
+                            putString(KEY_LONG_HOME_ACTION, state.longHomeAction.name)
+                            putBoolean(KEY_DSS_AUTO_STITCH, state.dssAutoStitch)
+                            putInt(KEY_LAUNCH_FAILURE_COUNT, 0)
+                            putBoolean(KEY_ONBOARDING_COMPLETE, true)
+                            putBoolean(KEY_ENABLE_FOCUS_LOCK_WORKAROUND, true)
+                        }.commit()
+                    }
+                    onNavigate { onFinish() }
+                },
                 modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 8.dp),
-                enabled = (!specialAppSelected || defaultHomeMatchesSpecialApp) && !isNavigating
-            ) { 
-                Text(if (specialAppSelected && defaultHomeMatchesSpecialApp) "Finish" else "Skip & Finish") 
+                enabled = isFinishButtonEnabled
+            ) {
+                Text(finishButtonText)
             }
         }
     }

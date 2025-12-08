@@ -1,71 +1,193 @@
-<picture><img width="512" height="512" alt="mjolnir_icon" src="https://raw.githubusercontent.com/blacksheepmvp/mjolnir/main/app/src/main/res/drawable/ic_launcher_foreground.png" /></picture>
+# **Mjolnir**
 
-## 🔨 Mjolnir
+Latest Release: v0.2.4h [RELEASE]
 
----
+Latest Pre-release: v0.2.6a [HOTFIX]
 
-## 🏠 Dual-Screen Home Launcher
+## ⚡ A Home Button Router for Multi-Display Android Devices
 
-Mjolnir allows you to transform your Home button into a powerful dual-screen controller.
+Mjolnir gives you **precise control** over what happens when you press the Home button — routing frontends or launchers to the top display, bottom display, or both.
 
-### How it Works
-*   **Accessibility Service:** Mjolnir uses an accessibility service to capture Home button inputs (and nothing else).
-*   **Custom Configuration:** You configure exactly what happens when you press Home: launch an app on the top screen, the bottom screen, or both.
-*   **Preserve App Switcher (AYN Thor):** For the AYN Thor, this service allows you to keep **Quickstep** as your default home app. This ensures you don't lose your Recents/App Switcher functionality while still enjoying a custom dual-screen home experience.
-*   **Device Support:** While designed for the Thor, it should work on other dual-screen devices (confirmation pending).
-
-### Setup Guide
-
-1.  **Install:** Download and install the latest release from [this repository](https://github.com/blacksheepmvp/mjolnir).
-    *   *(Optional) Add to [Obtanium](https://github.com/ImranR98/Obtainium) for automatic updates.*
-2.  **Initialize:** Open Mjolnir and select **Initialize Mjolnir Home**.
-3.  **Permissions:**
-    *   Grant **Notification Permissions** so the background service can stay active.
-    *   Enable the **Mjolnir Accessibility Service** when prompted to allow home button capture.
-4.  **Quick Tile (Optional):** Add the **Mjolnir Home** quick tile to your notification shade to easily toggle the Home key override on/off.
-
-### Configuration
-
-1.  **Select Apps:** Go to **Mjolnir Home Settings** in the menu.
-    *   Select the apps you want for your Top and Bottom screens.
-    *   *Note:* By default, the list shows only launchers/frontends. You can remove the filter to pick any app installed on your device.
-2.  **Customize Gestures:** Scroll down to configure actions for:
-    *   Single Press
-    *   Double Press
-    *   Triple Press
-    *   Long Press
-    *   *Actions include: Top Screen Home, Bottom Screen Home, Both Screens, Open Recents, or Do Nothing.*
-3.  **Double-Tap Delay:** Adjust the double-tap detection speed or use the system default.
-4.  **Set Default Home:**
-    *   **AYN THOR USERS:** Ensure **Quickstep** is set as your system default home app. This keeps your App Switcher working correctly. Mjolnir handles the rest.
-5.  **Enable:** Use the toggle in the main menu or the Quick Tile to enable Mjolnir Home. Press Home and enjoy!
+Originally designed for the **AYN Thor**, it also works on single-screen devices as a powerful Home-button automation tool.
 
 ---
 
-## 🛠️ Additional Tools: Steam File Generator
+# 🚨 HOTFIX: v0.2.6a — Safe to Install
 
-Mjolnir also includes a tool to streamline adding PC games to Android frontends like ES-DE and Beacon.
+A rare onboarding edge case in older 0.2.5 builds allowed users to create an invalid Basic Mode configuration:
 
-*   **Automated File Creation:** Quickly generates `.steam` files with the correct Steam AppID.
-*   **Multiple Input Methods:** Create files by sharing a `steamdb.info` URL to Mjolnir or by manually entering the AppID.
-*   **File Management:** Lists existing files, provides overwrite protection, and supports multi-select deletion.
+* One screen assigned to an app
+* The other assigned to `<Nothing>`
+* After reboot, Android launched Mjolnir into a voided display
+* Users could not open Apps, Settings, Mjolnir, or uninstall
 
-Note: this tool is going to be separated from Mjolnir and released as a standalone app in future releases.
+**v0.2.6a fixes this permanently.**
+
+### Should you update?
+
+| Your Version                    | Recommendation                                               |
+| ------------------------------- | ------------------------------------------------------------ |
+| **0.2.5 builds**                | **Upgrade immediately — these contain the soft-lock bug.**   |
+| **0.2.4h or earlier**           | **0.2.6a is safe to upgrade to.**                            |
+| Waiting for the Recovery Panel? | You may stay on **0.2.4h** until **v0.2.6b**, if you prefer. |
+
+0.2.6a enforces strict onboarding validation and prevents invalid configurations from saving or launching.
 
 ---
 
-## 📜 Changelog
-A complete history of all changes made to the project can be found in the [Changelog](CHANGELOG.md).
+# 🧠 How Mjolnir Works (Current Behavior)
+
+Mjolnir supports two modes during onboarding:
 
 ---
 
-## 📝 Building the Project
+## **Basic Mode (Safe, Simple)**
 
-This project requires **Android Studio** and the necessary SDKs for building. Clone the repository and sync Gradle to begin development.
+* Android’s default launcher remains unchanged
+* Mjolnir intercepts Home only when toggled on
+* Pressing Home routes apps to the top/bottom screens according to your configuration
+* No elevated behavior and no launcher replacement
+
+v0.2.6a enforces strict validation:
+
+* `<Nothing>` is no longer allowed
+* Both Top **and** Bottom must be valid apps
+* Invalid Basic configs are detected at startup and rerouted to onboarding
 
 ---
 
-## 🤝 Contributing
+## **Advanced Mode (Full Functionality)**
 
-If you have suggestions, bug reports, or feature requests, please open an issue or leave a comment on the release video. Thanks for checking out Mjolnir!
-If you want to send me a tip/donation, I've set up a [Ko-fi](https://ko-fi.com/xyzblacksheep)
+This mode gives you full control over screen routing, gestures, and Home override.
+
+* Requires Notification + Accessibility permissions
+* May require setting Mjolnir or Quickstep as default home depending on the chosen configuration
+* Supports single, dual, or fallback frontends
+* Supports multi-gesture Home actions
+
+Advanced Mode is ideal for:
+
+* Heavy customization
+* Multi-frontend setups
+* Using gestures to control both displays
+* Users who want Mjolnir to orchestrate Home behavior more deeply
+
+---
+
+# 📦 Installation & Setup
+
+### 1. **Download**
+
+Get the latest release from the [Releases page](https://github.com/blacksheepmvp/mjolnir/releases).
+*(Optional)* Add to [Obtanium](https://github.com/ImranR98/Obtainium) for auto-updates.
+
+### 2. **Initialize**
+
+Open Mjolnir → select **Initialize Mjolnir Home**.
+
+### 3. **Choose a Mode**
+
+* **Basic Mode** → simpler, safer, does not replace your launcher
+* **Advanced Mode** → full Home routing control
+
+### 4. **Grant Permissions**
+
+You’ll be prompted for:
+
+* **Notification** (keeps the service alive)
+* **Accessibility** (required to capture Home events)
+
+### 5. **Select Top & Bottom Frontends**
+
+Basic Mode requires valid apps in both slots.
+Advanced Mode allows more flexibility.
+
+### 6. **Customize Gestures**
+
+Defaults (safe for all users):
+
+* **Single Tap → Both Home**
+* **Double Tap → Top Home**
+* **Triple Tap → Recents**
+* **Long Press → Bottom Home**
+
+### 7. **(Optional) Quick Tile**
+
+Add the **Mjolnir Home** quick tile to toggle behavior on/off instantly.
+
+---
+
+# ⚙️ Features
+
+* Route Home presses to:
+
+    * Top screen
+    * Bottom screen
+    * Both screens
+    * Recents menu
+    * Custom bindings via gestures
+* Separate Basic / Advanced onboarding flows
+* Valid configuration enforcement (new in 0.2.6a)
+* Top–Bottom app swapping logic
+* Multi-screen routing powered by Android 10+ display APIs
+* Optional Quick Tile entry point
+* Included utilities for gaming frontends
+
+---
+
+# 🔧 Steam File Generator (Included Utility)
+
+A helper tool for frontends like ES-DE and Beacon:
+
+* Generates `.steam` metadata files
+* Accepts SteamDB links via Android’s Share menu
+* Prevents duplicates
+* Supports bulk deletion
+
+This tool will be spun off into its own app in a future release.
+
+---
+
+# 🧭 Coming in v0.2.6b — Emergency Recovery Panel
+
+v0.2.6a **prevents** invalid states.
+v0.2.6b will add a **universal escape hatch**:
+
+* Activated via gesture (no UI required)
+* Options to:
+
+    * Re-run onboarding
+    * Clear configuration
+    * Open Settings (top or bottom)
+    * Export logs
+    * Trigger a fallback safe-mode window
+    * Attempt uninstall
+* Works even if:
+
+    * Accessibility is off
+    * Notifications are killed
+    * Config is corrupted
+    * UI is half-rendered
+    * Mjolnir is not default home
+
+This feature permanently eliminates soft-lock scenarios.
+
+---
+
+# 📜 Changelog
+
+See **[CHANGELOG.md](CHANGELOG.md)** for a full version history.
+
+---
+
+# 🛠 Building
+
+Open in Android Studio → Sync Gradle → Run.
+
+---
+
+# 🤝 Contributing
+
+Open an issue for bugs, requests, or feedback.
+
+Buy me a coffee: **[https://ko-fi.com/xyzblacksheep](https://ko-fi.com/xyzblacksheep)**

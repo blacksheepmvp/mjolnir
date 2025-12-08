@@ -23,6 +23,25 @@ class HomeActivity : ComponentActivity() {
 
         val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
 
+        // --- NEW: Requirement 2 Safety Check ---
+        val isInterceptionActive = prefs.getBoolean(KEY_HOME_INTERCEPTION_ACTIVE, false)
+        val topAppPkg = prefs.getString(KEY_TOP_APP, null)
+        val bottomAppPkg = prefs.getString(KEY_BOTTOM_APP, null)
+
+        if (!isInterceptionActive) {
+            // In Basic Mode, both screens must be set. 
+            // If one is set (valid string) and the other is null (NOTHING), we have a "Bottomless Pit".
+            // We use XOR: if (Top Set) != (Bottom Set), then we have a mismatch.
+            val isTopSet = topAppPkg != null
+            val isBottomSet = bottomAppPkg != null
+
+            if (isTopSet xor isBottomSet) {
+                wipeConfigAndLaunchOnboarding()
+                return
+            }
+        }
+        // ---------------------------------------
+
         if (!isConfigurationValid()) {
             wipeConfigAndLaunchOnboarding()
             return
@@ -37,8 +56,8 @@ class HomeActivity : ComponentActivity() {
             return
         }
 
-        val topAppPkg = prefs.getString(KEY_TOP_APP, null)
-        val bottomAppPkg = prefs.getString(KEY_BOTTOM_APP, null)
+        //val topAppPkg = prefs.getString(KEY_TOP_APP, null)
+        //val bottomAppPkg = prefs.getString(KEY_BOTTOM_APP, null)
         val showAllApps = prefs.getBoolean(KEY_SHOW_ALL_APPS, false)
         val mainScreen = MainScreen.valueOf(prefs.getString(KEY_MAIN_SCREEN, MainScreen.TOP.name) ?: MainScreen.TOP.name)
 
