@@ -25,9 +25,10 @@ data class OnboardingState(
     val bottomAppPackage: String? = null,
     val homeInterceptionActive: Boolean = false,
     val singleHomeAction: Action = Action.BOTH_HOME,
-    val doubleHomeAction: Action = Action.NONE,
-    val tripleHomeAction: Action = Action.NONE,
-    val longHomeAction: Action = Action.NONE,
+    // CHANGED: Default to Safe Actions
+    val doubleHomeAction: Action = Action.TOP_HOME,
+    val tripleHomeAction: Action = Action.APP_SWITCH,
+    val longHomeAction: Action = Action.BOTTOM_HOME,
     val dssAutoStitch: Boolean = false,
 )
 
@@ -64,9 +65,10 @@ class OnboardingViewModel(application: Application) : AndroidViewModel(applicati
             bottomAppPackage = prefs.getString(KEY_BOTTOM_APP, null),
             homeInterceptionActive = prefs.getBoolean(KEY_HOME_INTERCEPTION_ACTIVE, false),
             singleHomeAction = getAction(KEY_SINGLE_HOME_ACTION, Action.BOTH_HOME),
-            doubleHomeAction = getAction(KEY_DOUBLE_HOME_ACTION, Action.NONE),
-            tripleHomeAction = getAction(KEY_TRIPLE_HOME_ACTION, Action.NONE),
-            longHomeAction = getAction(KEY_LONG_HOME_ACTION, Action.NONE),
+            // CHANGED: Default to Safe Actions
+            doubleHomeAction = getAction(KEY_DOUBLE_HOME_ACTION, Action.TOP_HOME),
+            tripleHomeAction = getAction(KEY_TRIPLE_HOME_ACTION, Action.APP_SWITCH),
+            longHomeAction = getAction(KEY_LONG_HOME_ACTION, Action.BOTTOM_HOME),
             dssAutoStitch = prefs.getBoolean(KEY_DSS_AUTO_STITCH, false)
         )
     }

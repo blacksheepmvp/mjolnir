@@ -48,6 +48,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -58,7 +59,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.core.content.edit
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
@@ -91,7 +95,7 @@ class MainActivity : ComponentActivity() {
 
         WindowCompat.setDecorFitsSystemWindows(window, false)
 
-        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
         
         // Initialize state from prefs
         _romDirUri.value = prefs.getString(KEY_ROM_DIR_URI, null)
@@ -400,7 +404,7 @@ class MainActivity : ComponentActivity() {
 
                     if (showSettings) {
                         Box(modifier = Modifier.fillMaxSize()) {
-                            androidx.compose.runtime.key(settingsSessionId) { 
+                            key(settingsSessionId) {
                                 SettingsScreen(
                                     startDestination = settingsStartDestination,
                                     currentPath = prefs.getString(KEY_ROM_DIR_URI, "") ?: "",
@@ -529,6 +533,73 @@ private fun readChangelog(context: Context, fileName: String): String {
 }
 
 @Composable
+fun SimpleMarkdownText(markdown: String, modifier: Modifier = Modifier) {
+    // FIX: Read theme values in the Composable context
+    val titleLargeSize = MaterialTheme.typography.titleLarge.fontSize
+    val titleMediumSize = MaterialTheme.typography.titleMedium.fontSize
+
+    // FIX: Pass theme values as keys to remember so it updates on theme change
+    val annotatedString = remember(markdown, titleLargeSize, titleMediumSize) {
+        buildAnnotatedString {
+            val lines = markdown.lines()
+            lines.forEach { line ->
+                // Handle Headers first as they are block-level and exclusive
+                if (line.startsWith("# ")) {
+                    withStyle(style = SpanStyle(fontWeight = FontWeight.Bold, fontSize = titleLargeSize)) {
+                        // FIX: Use '\n' for newline
+                        append(line.removePrefix("# ") + "\n")
+                    }
+                } else if (line.startsWith("## ")) {
+                    withStyle(style = SpanStyle(fontWeight = FontWeight.Bold, fontSize = titleMediumSize)) {
+                        // FIX: Use '\n' for newline
+                        append(line.removePrefix("## ") + "\n")
+                    }
+                } else {
+                    // Handle line content, including bullets and bold
+                    var processedLine = line
+
+                    // Handle bullets
+                    if (processedLine.startsWith("- ")) {
+                        append("• ")
+                        processedLine = processedLine.removePrefix("- ")
+                    }
+
+                    // Handle bold within the rest of the line
+                    val boldRegex = Regex("\\*\\*(.*?)\\*\\*")
+                    var lastIndex = 0
+                    boldRegex.findAll(processedLine).forEach { matchResult ->
+                        val startIndex = matchResult.range.first
+                        val endIndex = matchResult.range.last + 1
+                        val boldText = matchResult.groupValues[1]
+
+                        // Append text before the bold part
+                        if (startIndex > lastIndex) {
+                            append(processedLine.substring(lastIndex, startIndex))
+                        }
+
+                        // Append the bold text with style
+                        withStyle(style = SpanStyle(fontWeight = FontWeight.Bold)) {
+                            append(boldText)
+                        }
+                        lastIndex = endIndex
+                    }
+
+                    // Append any remaining text after the last bold part
+                    if (lastIndex < processedLine.length) {
+                        append(processedLine.substring(lastIndex))
+                    }
+
+                    // Append newline
+                    append("\n")
+                }
+            }
+        }
+    }
+
+    Text(text = annotatedString, modifier = modifier, style = MaterialTheme.typography.bodyMedium)
+}
+
+@Composable
 fun ExpandableChangelogItem(version: String, content: String) {
     var expanded by remember { mutableStateOf(false) }
     Column(modifier = Modifier.padding(vertical = 8.dp)) {
@@ -546,9 +617,8 @@ fun ExpandableChangelogItem(version: String, content: String) {
             Text(version, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
         }
         if (expanded) {
-            Text(
-                text = content,
-                style = MaterialTheme.typography.bodyMedium,
+            SimpleMarkdownText(
+                markdown = content,
                 modifier = Modifier.padding(start = 16.dp, top = 8.dp)
             )
         }

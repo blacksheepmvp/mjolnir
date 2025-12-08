@@ -1186,6 +1186,19 @@ private fun HomeLauncherSettingsMenu(
 ) {
     val context = LocalContext.current
     val launcherApps = remember(showAllApps) { getLaunchableApps(context, showAllApps) }
+    val prefs = remember { context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE) }
+
+    // NEW: Requirement 1 - Hide <Nothing> if Interception is inactive (Basic Mode)
+    val isInterceptionActive = remember { prefs.getBoolean(KEY_HOME_INTERCEPTION_ACTIVE, false) }
+
+    val displayedApps = remember(launcherApps, isInterceptionActive) {
+        if (isInterceptionActive) {
+            launcherApps
+        } else {
+            launcherApps.filter { it.packageName != "NOTHING" }
+        }
+    }
+
     var topExpanded by remember { mutableStateOf(false) }
     var bottomExpanded by remember { mutableStateOf(false) }
 
@@ -1195,7 +1208,7 @@ private fun HomeLauncherSettingsMenu(
     val diagnosticsEnabled = remember { mutableStateOf(DiagnosticsConfig.isEnabled(context)) }
     val maxLogSize = remember { mutableStateOf(DiagnosticsConfig.getMaxBytes(context)) }
 
-    val prefs = remember { context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE) }
+    //val prefs = remember { context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE) }
     val focusLockWorkaroundState = remember { mutableStateOf(prefs.getBoolean(KEY_ENABLE_FOCUS_LOCK_WORKAROUND, false)) }
 
     val overlayPermissionLauncher = rememberLauncherForActivityResult(
@@ -1436,7 +1449,7 @@ private fun HomeLauncherSettingsMenu(
                                     expanded = topExpanded,
                                     onDismissRequest = { topExpanded = false }
                                 ) {
-                                    launcherApps.forEach { app ->
+                                    displayedApps.forEach { app ->
                                         DropdownMenuItem(
                                             text = { Text(app.label) },
                                             leadingIcon = {
@@ -1522,7 +1535,7 @@ private fun HomeLauncherSettingsMenu(
                                     expanded = bottomExpanded,
                                     onDismissRequest = { bottomExpanded = false } ) {
                                     // MANUAL CHANGE: Filter out special apps (Quickstep/Odin) from the Bottom slot
-                                    launcherApps
+                                    displayedApps
                                         .filterNot { it.packageName in SPECIAL_HOME_APPS }
                                         .forEach { app ->
                                             DropdownMenuItem(
@@ -1659,7 +1672,7 @@ private fun HomeLauncherSettingsMenu(
                 var doubleHomeAction by remember {
                     mutableStateOf(
                         Action.valueOf(
-                            prefs.getString(KEY_DOUBLE_HOME_ACTION, Action.NONE.name)!!
+                            prefs.getString(KEY_DOUBLE_HOME_ACTION, Action.TOP_HOME.name)!!
                         )
                     )
                 }
@@ -1717,7 +1730,7 @@ private fun HomeLauncherSettingsMenu(
                 var tripleHomeAction by remember {
                     mutableStateOf(
                         Action.valueOf(
-                            prefs.getString(KEY_TRIPLE_HOME_ACTION, Action.NONE.name)!!
+                            prefs.getString(KEY_TRIPLE_HOME_ACTION, Action.APP_SWITCH.name)!!
                         )
                     )
                 }
@@ -1775,7 +1788,7 @@ private fun HomeLauncherSettingsMenu(
                 var longHomeAction by remember {
                     mutableStateOf(
                         Action.valueOf(
-                            prefs.getString(KEY_LONG_HOME_ACTION, Action.NONE.name)!!
+                            prefs.getString(KEY_LONG_HOME_ACTION, Action.BOTTOM_HOME.name)!!
                         )
                     )
                 }
