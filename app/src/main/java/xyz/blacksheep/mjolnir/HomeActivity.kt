@@ -155,7 +155,17 @@ class HomeActivity : ComponentActivity() {
             remove(KEY_BOTTOM_APP)
             remove(KEY_HOME_INTERCEPTION_ACTIVE)
         }
-        startActivity(Intent(this, OnboardingActivity::class.java))
+
+        // NEW: Launch a safe, dual-screen recovery state instead of a single activity.
+        val mainActivityIntent = Intent(this, MainActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        val onboardingIntent = Intent(this, OnboardingActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+
+        DualScreenLauncher.launchOnDualScreens(this, mainActivityIntent, onboardingIntent, MainScreen.TOP)
+
         finish()
     }
 
