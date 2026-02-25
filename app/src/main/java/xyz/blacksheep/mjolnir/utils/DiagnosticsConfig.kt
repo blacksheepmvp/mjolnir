@@ -6,13 +6,14 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import xyz.blacksheep.mjolnir.settings.settingsPrefs
 
 const val KEY_DIAGNOSTICS_ENABLED = "diagnostics_enabled"
 const val KEY_DIAGNOSTICS_MAX_BYTES = "diagnostics_max_bytes"
 
 object DiagnosticsConfig {
 
-    private fun getPrefs(context: Context) = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    private fun getPrefs(context: Context) = context.settingsPrefs()
 
     fun isEnabled(context: Context): Boolean {
         return getPrefs(context).getBoolean(KEY_DIAGNOSTICS_ENABLED, false)
@@ -32,7 +33,12 @@ object DiagnosticsConfig {
     }
 
     fun getLogFile(context: Context): File {
-        return File(context.filesDir, "logs/diagnostics_current.log")
+        val baseDir = context.getExternalFilesDir(null) ?: context.filesDir
+        val logDir = File(baseDir, "logs")
+        if (!logDir.exists()) {
+            logDir.mkdirs()
+        }
+        return File(logDir, "diagnostics_current.log")
     }
 
     fun clearLog(context: Context) {

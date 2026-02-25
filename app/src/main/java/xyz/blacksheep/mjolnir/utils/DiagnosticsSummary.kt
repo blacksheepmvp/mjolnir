@@ -14,6 +14,7 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import xyz.blacksheep.mjolnir.settings.settingsPrefs
 
 /**
  * Provides read-only access to diagnostics metadata for the Summary Screen.
@@ -126,7 +127,7 @@ object DiagnosticsActions {
     }
 
     private fun createSettingsSnapshot(context: Context): String {
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val prefs = context.settingsPrefs()
         val sb = StringBuilder()
         sb.append("===== Mjolnir Settings Snapshot =====\n")
         

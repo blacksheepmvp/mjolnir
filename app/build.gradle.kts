@@ -11,8 +11,8 @@ android {
         applicationId = "xyz.blacksheep.mjolnir"
         minSdk = 24
         targetSdk = 34
-        versionCode = 18
-        versionName = "0.2.6a"
+        versionCode = 19
+        versionName = "0.2.7"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -44,6 +44,7 @@ android {
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.activity.compose)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)

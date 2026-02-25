@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.content.pm.ResolveInfo
 import android.os.Build
 import android.provider.Settings
+import android.view.Display
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -58,6 +59,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.focusable
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
@@ -77,11 +81,14 @@ import xyz.blacksheep.mjolnir.KEY_LAUNCH_FAILURE_COUNT
 import xyz.blacksheep.mjolnir.KEY_ONBOARDING_COMPLETE
 import xyz.blacksheep.mjolnir.KEY_TOP_APP
 import xyz.blacksheep.mjolnir.PREFS_NAME
-import xyz.blacksheep.mjolnir.settings.LauncherApp
-import xyz.blacksheep.mjolnir.settings.getLaunchableApps
-import xyz.blacksheep.mjolnir.settings.getPackageIcon
-import xyz.blacksheep.mjolnir.settings.rememberDrawablePainter
+import xyz.blacksheep.mjolnir.SafetyNetManager
+import xyz.blacksheep.mjolnir.launchers.LauncherApp
+import xyz.blacksheep.mjolnir.launchers.getLaunchableApps
+import xyz.blacksheep.mjolnir.launchers.getPackageIcon
+import xyz.blacksheep.mjolnir.launchers.rememberDrawablePainter
+import xyz.blacksheep.mjolnir.settings.SafetyNetIndicator
 import xyz.blacksheep.mjolnir.utils.DiagnosticsLogger
+import xyz.blacksheep.mjolnir.settings.settingsPrefs
 
 
 @Composable
@@ -137,6 +144,11 @@ fun HomeSelectionUI(
     onManageBlacklist: () -> Unit = {}
 ) {
     val context = LocalContext.current
+    var safetyNetStatus by remember { mutableStateOf(SafetyNetManager.getSafetyNetStatus(context)) }
+    val isDefaultHome = remember(context) { SafetyNetManager.isDefaultHome(context) }
+    val bottomDisplayId = safetyNetStatus.activeDisplayIds.firstOrNull { it != Display.DEFAULT_DISPLAY }
+    val topProtected = safetyNetStatus.runningDisplayIds.contains(Display.DEFAULT_DISPLAY)
+    val bottomProtected = bottomDisplayId?.let { safetyNetStatus.runningDisplayIds.contains(it) } ?: false
     var showAllApps by remember { mutableStateOf(false) }
     var showInfoDialog by remember { mutableStateOf(false) }
     var showSpecialAppDialog by remember { mutableStateOf(false) }
@@ -151,10 +163,48 @@ fun HomeSelectionUI(
     val cardContentColor = MaterialTheme.colorScheme.onSurface
     val headerColor = MaterialTheme.colorScheme.onBackground
 
+    val isDuplicate = topAppPackage != null && topAppPackage == bottomAppPackage
+    val isBasicComplete = topAppPackage != null && bottomAppPackage != null
+    val isAdvancedComplete = topAppPackage != null || bottomAppPackage != null
+    val isConfigValid = !isDuplicate && if (isBasicFlow) isBasicComplete else isAdvancedComplete
+    val shouldTrapClick = isBasicFlow && !isConfigValid
+    val isButtonEnabled = !isNavigating && (isConfigValid || shouldTrapClick)
+    val handleNext: () -> Unit = {
+        if (isConfigValid) {
+            onNext()
+        } else if (shouldTrapClick) {
+            val msg = when {
+                isDuplicate -> "You cannot select the same app for both screens."
+                topAppPackage == null -> "Please select a top screen app."
+                bottomAppPackage == null -> "Please select a bottom screen app."
+                else -> "Incomplete configuration."
+            }
+            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // Controller focus state removed.
+
     LaunchedEffect(showAllApps) {
         isLoading = true
         launcherApps = withContext(Dispatchers.IO) { getLaunchableApps(context, showAll = showAllApps) }
         isLoading = false
+    }
+
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(400L)
+        safetyNetStatus = SafetyNetManager.getSafetyNetStatus(context)
+    }
+
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                safetyNetStatus = SafetyNetManager.getSafetyNetStatus(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
     
     // --- MANUAL CHANGE START: Requirement 1 ---
@@ -234,10 +284,10 @@ fun HomeSelectionUI(
 
     Scaffold(containerColor = Color.Transparent) { padding ->
         Box(modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp)) {
-            Column(
-                modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth().verticalScroll(rememberScrollState()),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
+                Column(
+                    modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth().verticalScroll(rememberScrollState()),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
                 Text("Select Home Apps", style = MaterialTheme.typography.headlineMedium, color = headerColor, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
                 Spacer(Modifier.height(24.dp))
 
@@ -254,6 +304,13 @@ fun HomeSelectionUI(
                         backgroundColor = cardBgColor,
                         contentColor = cardContentColor,
                         shape = MaterialTheme.shapes.large
+                    )
+                    SafetyNetIndicator(
+                        isActive = topProtected,
+                        isVisible = isDefaultHome,
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(8.dp)
                     )
                     DropdownMenu(
                         expanded = topExpanded,
@@ -292,6 +349,13 @@ fun HomeSelectionUI(
                         contentColor = cardContentColor,
                         shape = MaterialTheme.shapes.large
                     )
+                    SafetyNetIndicator(
+                        isActive = bottomProtected,
+                        isVisible = isDefaultHome,
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(8.dp)
+                    )
                     DropdownMenu(
                         expanded = bottomExpanded,
                         onDismissRequest = { bottomExpanded = false },
@@ -320,16 +384,6 @@ fun HomeSelectionUI(
             OutlinedButton(onClick = onPrev, modifier = Modifier.align(Alignment.BottomStart).padding(bottom = 8.dp), enabled = !isNavigating) { Text("Back") }
             IconButton(onClick = { showInfoDialog = true }, modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp), enabled = !isNavigating) { Icon(Icons.Default.Info, "Info", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
             
-            // --- CHANGED: Next Button Logic (Trap Click in Basic Mode & Duplicate Check) ---
-            val isDuplicate = topAppPackage != null && topAppPackage == bottomAppPackage
-            val isBasicComplete = topAppPackage != null && bottomAppPackage != null
-            val isAdvancedComplete = topAppPackage != null || bottomAppPackage != null
-
-            val isConfigValid = !isDuplicate && if (isBasicFlow) isBasicComplete else isAdvancedComplete
-
-            val shouldTrapClick = isBasicFlow && !isConfigValid
-            val isButtonEnabled = !isNavigating && (isConfigValid || shouldTrapClick)
-
             val nextColors = if (shouldTrapClick) {
                 ButtonDefaults.outlinedButtonColors(
                     contentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
@@ -345,26 +399,13 @@ fun HomeSelectionUI(
             }
 
             OutlinedButton(
-                onClick = { 
-                    if (isConfigValid) {
-                        onNext() 
-                    } else if (shouldTrapClick) {
-                        // Basic Mode: Toast if missing selection
-                        val msg = when {
-                            isDuplicate -> "You cannot select the same app for both screens."
-                            topAppPackage == null -> "Please select a top screen app."
-                            bottomAppPackage == null -> "Please select a bottom screen app."
-                            else -> "Incomplete configuration."
-                        }
-                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                    }
-                }, 
-                modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 8.dp), 
+                onClick = handleNext,
+                modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 8.dp),
                 enabled = isButtonEnabled,
                 colors = nextColors,
                 border = nextBorder
-            ) { 
-                Text("Next") 
+            ) {
+                Text("Next")
             }
 
             // Top-right controls
@@ -413,6 +454,8 @@ fun BasicSetDefaultHomeScreen(
     
     val SPECIAL_HOME_APPS = remember { setOf("com.android.launcher3", "com.odin.odinlauncher") }
     val hasInvalidSpecialApp = state.topAppPackage in SPECIAL_HOME_APPS
+    val defaultButtonRequester = remember { FocusRequester() }
+    val finishButtonRequester = remember { FocusRequester() }
 
     val homePickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
         // Result doesn't matter, ON_RESUME will handle the state check.
@@ -422,7 +465,7 @@ fun BasicSetDefaultHomeScreen(
         val isValid = !hasInvalidSpecialApp
         if (isValid) {
             DiagnosticsLogger.logEvent("Onboarding", "VALID_CONFIG_DETECTED", "Committing Basic prefs", context)
-            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            val prefs = context.settingsPrefs()
             val success = prefs.edit() 
                 .putString(KEY_TOP_APP, state.topAppPackage)
                 .putString(KEY_BOTTOM_APP, state.bottomAppPackage)
@@ -445,6 +488,21 @@ fun BasicSetDefaultHomeScreen(
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    LaunchedEffect(isMjolnirDefault, hasInvalidSpecialApp) {
+        if (!hasInvalidSpecialApp && !isMjolnirDefault) {
+            defaultButtonRequester.requestFocus()
+        } else {
+            finishButtonRequester.requestFocus()
+        }
+    }
+
+    val canFinish = !isNavigating && !hasInvalidSpecialApp && isMjolnirDefault
+    val handleFinish: () -> Unit = {
+        if (canFinish) {
+            onNavigate { onFinish() }
+        }
     }
 
     Scaffold(containerColor = Color.Transparent) { padding ->
@@ -472,7 +530,7 @@ fun BasicSetDefaultHomeScreen(
                                 val intent = Intent(Settings.ACTION_HOME_SETTINGS)
                                 homePickerLauncher.launch(intent)
                             },
-                            modifier = Modifier.fillMaxWidth(0.7f),
+                            modifier = Modifier.fillMaxWidth(0.7f).focusRequester(defaultButtonRequester).focusable(),
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = MaterialTheme.colorScheme.surfaceVariant,
                                 contentColor = MaterialTheme.colorScheme.onBackground
@@ -482,21 +540,20 @@ fun BasicSetDefaultHomeScreen(
                     }
                 }
             }
-            
+
             OutlinedButton(onClick = { onNavigate { navController.popBackStack() } }, modifier = Modifier.align(Alignment.BottomStart).padding(bottom = 8.dp), enabled = !isNavigating) { Text("Back") }
-            
+
             OutlinedButton(
-                onClick = { onNavigate { onFinish() } }, 
-                modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 8.dp),
+                onClick = { onNavigate { onFinish() } },
+                modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 8.dp).focusRequester(finishButtonRequester).focusable(),
                 // CHANGED: Force user to set Mjolnir as default in Basic Mode
-                enabled = !isNavigating && !hasInvalidSpecialApp && isMjolnirDefault
-            ) { 
-                Text("Finish") 
+                enabled = canFinish
+            ) {
+                Text("Finish")
+            }
             }
         }
     }
-}
-
 private fun getCurrentDefaultHome(context: Context): String {
     val pm = context.packageManager
     val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)

@@ -1,6 +1,7 @@
 package xyz.blacksheep.mjolnir
 
 import android.app.Activity
+import android.app.ActivityManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -12,8 +13,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -56,9 +57,16 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.focusable
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -73,14 +81,15 @@ import kotlinx.coroutines.launch
 import xyz.blacksheep.mjolnir.onboarding.OnboardingActivity
 import xyz.blacksheep.mjolnir.services.KeepAliveService
 import xyz.blacksheep.mjolnir.settings.AboutDialog
-import xyz.blacksheep.mjolnir.settings.AppTheme
-import xyz.blacksheep.mjolnir.settings.MainScreen
+import xyz.blacksheep.mjolnir.model.AppTheme
+import xyz.blacksheep.mjolnir.model.MainScreen
 import xyz.blacksheep.mjolnir.settings.SettingsItem
 import xyz.blacksheep.mjolnir.settings.SettingsScreen
-import xyz.blacksheep.mjolnir.settings.getLaunchableApps
+import xyz.blacksheep.mjolnir.launchers.getLaunchableApps
 import xyz.blacksheep.mjolnir.ui.theme.MjolnirTheme
 import xyz.blacksheep.mjolnir.utils.DiagnosticsLogger
 import xyz.blacksheep.mjolnir.utils.DualScreenLauncher
+import xyz.blacksheep.mjolnir.settings.settingsPrefs
 
 @OptIn(ExperimentalMaterial3Api::class)
 class MainActivity : ComponentActivity() {
@@ -90,12 +99,13 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        excludeTaskFromRecents()
 
         installSplashScreen()
 
         WindowCompat.setDecorFitsSystemWindows(window, false)
 
-        val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+        val prefs = settingsPrefs()
         
         // Initialize state from prefs
         _romDirUri.value = prefs.getString(KEY_ROM_DIR_URI, null)
@@ -134,10 +144,12 @@ class MainActivity : ComponentActivity() {
                     "Unknown"
                 }
             }
-
-            LaunchedEffect(Unit) {
-                if (versionName != "Unknown") {
-                    prefs.edit { putString(KEY_LAST_SEEN_VERSION, versionName) }
+            val versionCode = remember {
+                try {
+                    val packageInfo = packageManager.getPackageInfo(packageName, 0)
+                    packageInfo.longVersionCode
+                } catch (e: Exception) {
+                    -1L
                 }
             }
 
@@ -149,7 +161,9 @@ class MainActivity : ComponentActivity() {
                 val onboardingComplete = prefs.getBoolean(KEY_ONBOARDING_COMPLETE, false)
                 val homeAppsConfigured = !topApp.isNullOrEmpty() || !bottomApp.isNullOrEmpty()
                 if (!onboardingComplete && !homeAppsConfigured) {
-                    startActivity(Intent(this@MainActivity, OnboardingActivity::class.java))
+                    startActivity(Intent(this@MainActivity, OnboardingActivity::class.java).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    })
                 }
             }
 
@@ -204,6 +218,23 @@ class MainActivity : ComponentActivity() {
                 var showSteamDialog by remember { mutableStateOf(false) }
                 var showWhatsNewDialog by remember { mutableStateOf(false) }
                 var showAboutDialog by remember { mutableStateOf(false) }
+                val closeWhatsNewFocus = remember { FocusRequester() }
+
+                LaunchedEffect(versionCode) {
+                    var lastSeenCode = prefs.getLong(KEY_LAST_SEEN_VERSION_CODE, -1L)
+                    if (lastSeenCode == -1L) {
+                        val legacy = prefs.getString(KEY_LAST_SEEN_VERSION, null)
+                        if (legacy != null) {
+                            lastSeenCode = legacy.toLongOrNull() ?: 0L
+                        }
+                    }
+                    if (lastSeenCode != -1L && lastSeenCode != versionCode) {
+                        showWhatsNewDialog = true
+                    }
+                    if (versionCode > 0L) {
+                        prefs.edit { putLong(KEY_LAST_SEEN_VERSION_CODE, versionCode) }
+                    }
+                }
 
                 // Check if configuration is valid (reusing KeepAliveService logic simplified)
                 val SPECIAL_HOME_APPS = remember { setOf("com.android.launcher3", "com.odin.odinlauncher") }
@@ -225,47 +256,66 @@ class MainActivity : ComponentActivity() {
                 // Title color logic
                 val homeSetupTitleColor = if (!isFullyValid) MaterialTheme.colorScheme.primary else Color.Unspecified
 
+                val handleBack: () -> Unit = {
+                    when {
+                        showSteamDialog -> showSteamDialog = false
+                        showAboutDialog -> showAboutDialog = false
+                        showWhatsNewDialog -> showWhatsNewDialog = false
+                        showSettings -> showSettings = false
+                        else -> this@MainActivity.onBackPressedDispatcher.onBackPressed()
+                    }
+                }
+
                 Box(modifier = Modifier.fillMaxSize()) {
                     Scaffold(
                         modifier = Modifier.fillMaxSize(),
                         topBar = {
                             Surface(tonalElevation = 2.dp) {
-                                TopAppBar(
-                                    title = { Text("Mjolnir") },
-                                    navigationIcon = {
-                                        IconButton(onClick = { 
-                                            DiagnosticsLogger.logEvent("MainActivity", "MENU_CLICKED", "currentShowSettings=$showSettings", context)
-                                            settingsSessionId++
-                                            showSettings = true 
-                                        }) { Icon(Icons.Default.Menu, contentDescription = "Menu") }
-                                    },
-                                    actions = {
-                                        // Replaced Icon Button with "About" Text Button
-                                        TextButton(onClick = { showAboutDialog = true }) {
-                                            Text("About")
+                                    TopAppBar(
+                                        title = { Text("Mjolnir") },
+                                        navigationIcon = {
+                                            IconButton(onClick = { 
+                                                DiagnosticsLogger.logEvent("MainActivity", "MENU_CLICKED", "currentShowSettings=$showSettings", context)
+                                                settingsSessionId++
+                                                showSettings = true 
+                                            }) { Icon(Icons.Default.Menu, contentDescription = "Menu") }
+                                        },
+                                        actions = {
+                                            // Replaced Icon Button with "About" Text Button
+                                            TextButton(onClick = { showAboutDialog = true }) {
+                                                Text("About")
+                                            }
                                         }
-                                    }
-                                )
+                                    )
+                                }
                             }
-                        }
-                    ) {
-                        innerPadding ->
-                        Surface(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(innerPadding),
-                            color = MaterialTheme.colorScheme.background
                         ) {
-                            Box(modifier = Modifier.fillMaxSize()) {
-                                LazyColumn(modifier = Modifier.fillMaxSize()) {
-                                    item { Text("Setup", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(16.dp)) }
-                                    item {
-                                        Row(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .clickable(onClick = {
-                                                    startActivity(
-                                                        Intent(
+                            innerPadding ->
+                            val backgroundBrush = if (useDarkTheme) {
+                                Brush.verticalGradient(listOf(Color(0xFF0B1C38), Color(0xFF05080F)))
+                            } else {
+                                Brush.verticalGradient(listOf(Color(0xFF4C86E8), Color(0xFFE9F1FF)))
+                            }
+                        Surface(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(innerPadding),
+                                color = Color.Transparent
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .background(backgroundBrush)
+                                ) {
+                                    LazyColumn(modifier = Modifier.fillMaxSize()) {
+                                        item { Text("Setup", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(16.dp)) }
+                                        item {
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .clickable(onClick = {
+                                                        startActivity(
+                                                            Intent(
                                                             context,
                                                             OnboardingActivity::class.java
                                                         )
@@ -323,7 +373,9 @@ class MainActivity : ComponentActivity() {
                                     OutlinedButton(
                                         onClick = {
                                             showSteamDialog = false
-                                            startActivity(Intent(context, SteamFileGenActivity::class.java))
+                                            startActivity(Intent(context, SteamFileGenActivity::class.java).apply {
+                                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                            })
                                         },
                                         modifier = Modifier.fillMaxWidth()
                                     ) { Text("SteamDB.info") }
@@ -333,7 +385,9 @@ class MainActivity : ComponentActivity() {
                                     OutlinedButton(
                                         onClick = {
                                             showSteamDialog = false
-                                            startActivity(Intent(context, ManualFileGenActivity::class.java))
+                                            startActivity(Intent(context, ManualFileGenActivity::class.java).apply {
+                                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                            })
                                         },
                                         modifier = Modifier.fillMaxWidth()
                                     ) { Text("Custom") }
@@ -370,24 +424,34 @@ class MainActivity : ComponentActivity() {
                             }.toMap()
                         }
 
+                        LaunchedEffect(showWhatsNewDialog) {
+                            if (showWhatsNewDialog) {
+                                closeWhatsNewFocus.requestFocus()
+                            }
+                        }
+
                         AlertDialog(
                             onDismissRequest = { showWhatsNewDialog = false },
                             title = { Text("What's New") },
                             text = {
                                 val scrollState = rememberScrollState()
                                 Column(modifier = Modifier.verticalScroll(scrollState)) {
-                                    changelogFiles.forEach { fileName ->
+                                    changelogFiles.forEachIndexed { index, fileName ->
                                         val version = fileName.replace(".txt", "")
                                         val content = changelogs[fileName] ?: "Loading..."
                                         ExpandableChangelogItem(
                                             version = version, 
-                                            content = content
+                                            content = content,
+                                            initialExpanded = index == 0
                                         )
                                     }
                                 }
                             },
                             confirmButton = {
-                                TextButton(onClick = { showWhatsNewDialog = false }) { Text("Close") }
+                                TextButton(
+                                    onClick = { showWhatsNewDialog = false },
+                                    modifier = Modifier.focusRequester(closeWhatsNewFocus).focusable()
+                                ) { Text("Close") }
                             },
                             dismissButton = {
                                 TextButton(onClick = {
@@ -505,12 +569,19 @@ class MainActivity : ComponentActivity() {
                                         mainScreen = newMainScreen
                                     }
                                 )
-                            } 
+                            }
                         }
                     }
                 }
             }
         }
+    }
+    
+    private fun excludeTaskFromRecents() {
+        val activityManager = getSystemService(ActivityManager::class.java)
+        val taskId = this.taskId
+        activityManager.appTasks.firstOrNull { it.taskInfo.taskId == taskId }
+            ?.setExcludeFromRecents(true)
     }
 
     fun isAccessibilityServiceEnabled(context: Context, service: Class<*>): Boolean {
@@ -600,8 +671,8 @@ fun SimpleMarkdownText(markdown: String, modifier: Modifier = Modifier) {
 }
 
 @Composable
-fun ExpandableChangelogItem(version: String, content: String) {
-    var expanded by remember { mutableStateOf(false) }
+fun ExpandableChangelogItem(version: String, content: String, initialExpanded: Boolean = false) {
+    var expanded by remember(version) { mutableStateOf(initialExpanded) }
     Column(modifier = Modifier.padding(vertical = 8.dp)) {
         Row(
             modifier = Modifier

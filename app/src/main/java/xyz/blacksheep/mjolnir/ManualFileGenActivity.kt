@@ -55,9 +55,10 @@ import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import androidx.core.view.WindowCompat
 import kotlinx.coroutines.launch
-import xyz.blacksheep.mjolnir.settings.AppTheme
+import xyz.blacksheep.mjolnir.model.AppTheme
 import xyz.blacksheep.mjolnir.ui.theme.MjolnirTheme
 import xyz.blacksheep.mjolnir.utils.SteamTool
+import xyz.blacksheep.mjolnir.settings.settingsPrefs
 
 /**
  * Activity that provides a manual interface for creating file-based shortcuts (e.g., .steam files).
@@ -79,7 +80,7 @@ class ManualFileGenActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
 
-        val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+        val prefs = settingsPrefs()
 
         setContent {
             val initialThemeName = prefs.getString(KEY_THEME, AppTheme.SYSTEM.name)

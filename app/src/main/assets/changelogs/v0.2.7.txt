@@ -1,0 +1,18 @@
+# Mjolnir v0.2.7
+
+## What’s New
+- Safety Net activity to prevent soft‑lock when a screen would otherwise be left with an empty activity stack.
+- Protection indicators: persistent notification reports coverage; settings/onboarding show protection dots on top/bottom cards.
+- Display change handling: display listener marks safety‑net pending without surfacing on wake.
+- New gestures:
+  - BOTH: Home — sends Home to both screens.
+  - FOCUS: Home — sends Home to the selected screen.
+  - BOTH: Auto — launches the assigned Top app on top + Bottom app on bottom.
+  - FOCUS: Auto — launches the user-defined app on the active screen.
+- Gesture presets are now supported (including custom presets).
+- Start on boot (Advanced only): choose BOTH: Auto or BOTH: Home.
+- Settings files moved to the app folder.
+- Major refactor touching all aspects of UI/UX.
+
+## Notes
+- Debug tile is the only way to bring SafetyNet to the foreground; otherwise it stays at the bottom of each display stack.

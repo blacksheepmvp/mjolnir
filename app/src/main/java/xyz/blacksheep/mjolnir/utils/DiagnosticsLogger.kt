@@ -14,6 +14,7 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import xyz.blacksheep.mjolnir.settings.settingsPrefs
 
 /**
  * A centralized logging utility for recording runtime events, errors, and system state to a file.
@@ -108,7 +109,7 @@ object DiagnosticsLogger {
         val device = Build.DEVICE
         val maxBytes = DiagnosticsConfig.getMaxBytes(context)
 
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val prefs = context.settingsPrefs()
         val prefsSnapshot = prefs.all.map { "${it.key}=${it.value}" }.joinToString(" ")
 
         val headerDetails = "versionName=$versionName versionCode=$versionCode os=$osVersion device=$device maxBytes=$maxBytes"

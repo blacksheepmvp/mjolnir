@@ -7,7 +7,7 @@ import android.content.Intent
 import android.hardware.display.DisplayManager
 import android.os.Build
 import android.util.Log
-import xyz.blacksheep.mjolnir.settings.MainScreen
+import xyz.blacksheep.mjolnir.model.MainScreen
 
 /**
  * A utility object for handling application launches across multiple displays on dual-screen devices (like the AYN Thor).

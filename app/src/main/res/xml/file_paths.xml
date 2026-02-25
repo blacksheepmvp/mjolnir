@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths>
     <files-path name="logs" path="logs/"/>
+    <external-files-path name="logs_external" path="logs/"/>
+    <external-path name="gestures_external" path="Android/data/xyz.blacksheep.mjolnir/gestures/"/>
 </paths>

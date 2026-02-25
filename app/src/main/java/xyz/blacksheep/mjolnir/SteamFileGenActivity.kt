@@ -71,27 +71,29 @@ import androidx.core.content.edit
 import androidx.core.graphics.scale
 import androidx.core.net.toUri
 import androidx.core.view.WindowCompat
+import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import xyz.blacksheep.mjolnir.settings.AboutDialog
-import xyz.blacksheep.mjolnir.settings.AppTheme
-import xyz.blacksheep.mjolnir.settings.MainScreen
-import xyz.blacksheep.mjolnir.settings.ManualInputUi
-import xyz.blacksheep.mjolnir.settings.OverwriteConfirmationDialog
-import xyz.blacksheep.mjolnir.settings.SearchUi
+import xyz.blacksheep.mjolnir.model.AppTheme
+import xyz.blacksheep.mjolnir.model.MainScreen
 import xyz.blacksheep.mjolnir.settings.SettingsScreen
-import xyz.blacksheep.mjolnir.settings.SetupScreen
-import xyz.blacksheep.mjolnir.settings.UiState
-import xyz.blacksheep.mjolnir.settings.UiStateSaver
-import xyz.blacksheep.mjolnir.settings.getLaunchableApps
+import xyz.blacksheep.mjolnir.steam.ManualInputUi
+import xyz.blacksheep.mjolnir.steam.OverwriteConfirmationDialog
+import xyz.blacksheep.mjolnir.steam.SearchUi
+import xyz.blacksheep.mjolnir.steam.SetupScreen
+import xyz.blacksheep.mjolnir.steam.SteamGeneratorViewModel
+import xyz.blacksheep.mjolnir.steam.SteamSearchState
+import xyz.blacksheep.mjolnir.launchers.getLaunchableApps
 import xyz.blacksheep.mjolnir.ui.theme.MjolnirTheme
 import xyz.blacksheep.mjolnir.utils.DualScreenLauncher
 import xyz.blacksheep.mjolnir.utils.GameInfo
 import xyz.blacksheep.mjolnir.utils.OverwriteInfo
 import xyz.blacksheep.mjolnir.utils.OverwriteInfoSaver
 import xyz.blacksheep.mjolnir.utils.SteamTool
+import xyz.blacksheep.mjolnir.settings.settingsPrefs
 
 private const val ACTION_CCT_URL_RETURN = "xyz.blacksheep.mjolnir.ACTION_CCT_URL_RETURN"
 
@@ -116,7 +118,7 @@ class SteamFileGenActivity : ComponentActivity() {
          * Checks if the user has already selected a valid ROMs directory.
          */
         fun isRomDirectorySet(context: Context): Boolean {
-            val prefs = context.getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+            val prefs = context.settingsPrefs()
             return !prefs.getString(KEY_ROM_DIR_URI, null).isNullOrBlank()
         }
 
@@ -126,6 +128,7 @@ class SteamFileGenActivity : ComponentActivity() {
         fun createSetupIntent(context: Context): Intent {
             return Intent(context, SteamFileGenActivity::class.java).apply {
                 putExtra(EXTRA_FORCE_SETUP, true)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
         }
     }
@@ -169,7 +172,7 @@ class SteamFileGenActivity : ComponentActivity() {
         intentState.value = intentToProcess
 
 
-        val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+        val prefs = settingsPrefs()
 
         setContent {
             val initialThemeName = prefs.getString(KEY_THEME, AppTheme.SYSTEM.name)
@@ -227,7 +230,9 @@ class SteamFileGenActivity : ComponentActivity() {
                         onIntentConsumed = { intentState.value = null },
                         onFinish = {
                             if (isNewTask) {
-                                val intent = Intent(this@SteamFileGenActivity, MainActivity::class.java)
+                                val intent = Intent(this@SteamFileGenActivity, MainActivity::class.java).apply {
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                }
                                 startActivity(intent)
                             }
                             finish()
@@ -255,7 +260,7 @@ class SteamFileGenActivity : ComponentActivity() {
         }
 
         val romsDirUri =
-            getSharedPreferences(PREFS_NAME, MODE_PRIVATE).getString(KEY_ROM_DIR_URI, null)?.toUri()
+            settingsPrefs().getString(KEY_ROM_DIR_URI, null)?.toUri()
                 ?: return@withContext "Error: ROMs directory not set."
 
         return@withContext try {
@@ -321,10 +326,11 @@ class SteamFileGenActivity : ComponentActivity() {
         onIntentConsumed: () -> Unit,
         onFinish: () -> Unit
     ) {
-        val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+        val prefs = settingsPrefs()
         val romsDirectoryUri by rememberSaveable { mutableStateOf(romsDirUri) }
 
-        var uiState by rememberSaveable(stateSaver = UiStateSaver) { mutableStateOf(UiState.Idle) }
+        val viewModel: SteamGeneratorViewModel = viewModel()
+        val uiState by viewModel.uiState
         val scope = rememberCoroutineScope()
         val context = LocalContext.current
 
@@ -368,13 +374,13 @@ class SteamFileGenActivity : ComponentActivity() {
             scope.launch {
                 fileCreationResult = null
                 if (appId.isBlank()) {
-                    uiState = UiState.Failure("AppID cannot be empty.")
+                    viewModel.setFailure("AppID cannot be empty.")
                     return@launch
                 }
-                uiState = UiState.Loading(appId)
+                viewModel.setLoading(appId)
                 runCatching { SteamTool.fetchGameInfo(appId) }
-                    .onSuccess { gameInfo -> uiState = UiState.Success(gameInfo) }
-                    .onFailure { e -> uiState = UiState.Failure(e.message ?: "Unknown error") }
+                    .onSuccess { gameInfo -> viewModel.setSuccess(gameInfo) }
+                    .onFailure { e -> viewModel.setFailure(e.message ?: "Unknown error") }
             }
         }
 
@@ -395,7 +401,7 @@ class SteamFileGenActivity : ComponentActivity() {
 
         LaunchedEffect(uiState) {
             val currentState = uiState
-            if (currentState is UiState.Success && autoCreateFile) {
+            if (currentState is SteamSearchState.Success && autoCreateFile) {
                 createSteamFile(currentState.gameInfo)
             }
         }
@@ -414,7 +420,7 @@ class SteamFileGenActivity : ComponentActivity() {
                 }
             } ?: run {
                 if (intent.action == Intent.ACTION_SEND || intent.action == ACTION_CCT_URL_RETURN) {
-                    uiState = UiState.Failure("Invalid URL received")
+                    viewModel.setFailure("Invalid URL received")
                 }
             }
 
@@ -784,7 +790,7 @@ private fun FileListItem(
 
 @Composable
 fun MainScreen(
-    uiState: UiState, onSearch: (String) -> Unit, steamFiles: List<String>,
+    uiState: SteamSearchState, onSearch: (String) -> Unit, steamFiles: List<String>,
     fileCreationResult: String?, onCreateFile: (GameInfo) -> Unit,
     onFileClick: (String) -> Unit, onFileLongClick: (String) -> Unit, onOpenSteamDb: () -> Unit,
     inMultiSelectMode: Boolean, selectedFiles: Set<String>,

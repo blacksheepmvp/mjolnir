@@ -9,6 +9,7 @@ import android.os.Build
 import android.provider.Settings
 import android.view.ViewConfiguration
 import android.view.accessibility.AccessibilityManager
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
@@ -26,9 +27,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CenterFocusStrong
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Info
@@ -45,10 +48,14 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextField
+import androidx.core.content.FileProvider
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -58,14 +65,21 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.focusable
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.core.content.edit
@@ -74,23 +88,26 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.navigation.NavController
 import xyz.blacksheep.mjolnir.KEY_BOTTOM_APP
 import xyz.blacksheep.mjolnir.KEY_CUSTOM_DOUBLE_TAP_DELAY
-import xyz.blacksheep.mjolnir.KEY_DOUBLE_HOME_ACTION
 import xyz.blacksheep.mjolnir.KEY_DSS_AUTO_STITCH
 import xyz.blacksheep.mjolnir.KEY_ENABLE_FOCUS_LOCK_WORKAROUND
 import xyz.blacksheep.mjolnir.KEY_HOME_INTERCEPTION_ACTIVE
 import xyz.blacksheep.mjolnir.KEY_LAUNCH_FAILURE_COUNT
-import xyz.blacksheep.mjolnir.KEY_LONG_HOME_ACTION
 import xyz.blacksheep.mjolnir.KEY_ONBOARDING_COMPLETE
-import xyz.blacksheep.mjolnir.KEY_SINGLE_HOME_ACTION
+import xyz.blacksheep.mjolnir.KEY_AUTO_BOOT_BOTH_HOME
 import xyz.blacksheep.mjolnir.KEY_TOP_APP
-import xyz.blacksheep.mjolnir.KEY_TRIPLE_HOME_ACTION
 import xyz.blacksheep.mjolnir.KEY_USE_SYSTEM_DOUBLE_TAP_DELAY
-import xyz.blacksheep.mjolnir.PREFS_NAME
+import xyz.blacksheep.mjolnir.KEY_ACTIVE_GESTURE_CONFIG
+import xyz.blacksheep.mjolnir.KEY_THEME
+import xyz.blacksheep.mjolnir.model.AppTheme
 import xyz.blacksheep.mjolnir.home.Action
 import xyz.blacksheep.mjolnir.home.actionLabel
-import xyz.blacksheep.mjolnir.settings.rememberDrawablePainter
+import xyz.blacksheep.mjolnir.home.orderedActions
+import xyz.blacksheep.mjolnir.launchers.rememberDrawablePainter
 import xyz.blacksheep.mjolnir.utils.DiagnosticsLogger
+import xyz.blacksheep.mjolnir.settings.GestureConfigStore
+import xyz.blacksheep.mjolnir.settings.GesturePresetCardRow
 import kotlin.math.roundToInt
+import xyz.blacksheep.mjolnir.settings.settingsPrefs
 
 @Composable
 fun AdvancedPermissionScreen(navController: NavController, isNavigating: Boolean, onNavigate: (() -> Unit) -> Unit) {
@@ -113,6 +130,17 @@ fun AdvancedPermissionScreen(navController: NavController, isNavigating: Boolean
         containerColor = MaterialTheme.colorScheme.surfaceVariant,
         contentColor = MaterialTheme.colorScheme.onBackground
     )
+    val grantFocusRequester = remember { FocusRequester() }
+    val nextFocusRequester = remember { FocusRequester() }
+    val canNext = !isNavigating && hasPermission
+
+    LaunchedEffect(hasPermission) {
+        if (hasPermission) {
+            nextFocusRequester.requestFocus()
+        } else {
+            grantFocusRequester.requestFocus()
+        }
+    }
 
     if (showInfoDialog) {
         AlertDialog(
@@ -140,7 +168,7 @@ fun AdvancedPermissionScreen(navController: NavController, isNavigating: Boolean
                 } else {
                     Button(
                         onClick = { if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) launcher.launch(Manifest.permission.POST_NOTIFICATIONS) },
-                        modifier = Modifier.fillMaxWidth(0.7f),
+                        modifier = Modifier.fillMaxWidth(0.7f).focusRequester(grantFocusRequester).focusable(),
                         colors = buttonColors,
                         enabled = !isNavigating
                     ) { Text("Grant Permission") }
@@ -151,8 +179,8 @@ fun AdvancedPermissionScreen(navController: NavController, isNavigating: Boolean
             IconButton(onClick = { showInfoDialog = true }, modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp), enabled = !isNavigating) { Icon(Icons.Default.Info, "Info", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
             OutlinedButton(
                 onClick = { onNavigate { navController.navigate("advanced_accessibility") } }, 
-                modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 8.dp), 
-                enabled = !isNavigating && hasPermission
+                modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 8.dp).focusRequester(nextFocusRequester).focusable(), 
+                enabled = canNext
             ) { Text("Next") }
         }
     }
@@ -182,6 +210,17 @@ fun AdvancedAccessibilityScreen(navController: NavController, isNavigating: Bool
         containerColor = MaterialTheme.colorScheme.surfaceVariant,
         contentColor = MaterialTheme.colorScheme.onBackground
     )
+    val enableFocusRequester = remember { FocusRequester() }
+    val nextFocusRequester = remember { FocusRequester() }
+    val canNext = !isNavigating && isEnabled
+
+    LaunchedEffect(isEnabled) {
+        if (isEnabled) {
+            nextFocusRequester.requestFocus()
+        } else {
+            enableFocusRequester.requestFocus()
+        }
+    }
 
     if (showInfoDialog) {
         AlertDialog(
@@ -209,7 +248,7 @@ fun AdvancedAccessibilityScreen(navController: NavController, isNavigating: Bool
                 } else {
                     Button(
                         onClick = { context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) },
-                        modifier = Modifier.fillMaxWidth(0.7f),
+                        modifier = Modifier.fillMaxWidth(0.7f).focusRequester(enableFocusRequester).focusable(),
                         colors = buttonColors,
                         enabled = !isNavigating
                     ) { Text("Enable Mjolnir Service") }
@@ -220,8 +259,8 @@ fun AdvancedAccessibilityScreen(navController: NavController, isNavigating: Bool
             IconButton(onClick = { showInfoDialog = true }, modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp), enabled = !isNavigating) { Icon(Icons.Default.Info, "Info", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
             OutlinedButton(
                 onClick = { onNavigate { navController.navigate("advanced_home_selection") } }, 
-                modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 8.dp), 
-                enabled = !isNavigating && isEnabled
+                modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 8.dp).focusRequester(nextFocusRequester).focusable(), 
+                enabled = canNext
             ) { Text("Next") }
         }
     }
@@ -253,8 +292,25 @@ fun AdvancedHomeSelectionScreen(navController: NavController, viewModel: Onboard
 fun AdvancedGestureScreen(navController: NavController, viewModel: OnboardingViewModel, isNavigating: Boolean, onNavigate: (() -> Unit) -> Unit) {
     val state by viewModel.uiState
     val context = LocalContext.current
-    val prefs = remember { context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE) }
+    val prefs = remember { context.settingsPrefs() }
+    val themeName = remember { prefs.getString(KEY_THEME, AppTheme.SYSTEM.name) }
+    val isDarkTheme = when (runCatching { AppTheme.valueOf(themeName ?: AppTheme.SYSTEM.name) }.getOrNull() ?: AppTheme.SYSTEM) {
+        AppTheme.LIGHT -> false
+        AppTheme.DARK -> true
+        AppTheme.SYSTEM -> isSystemInDarkTheme()
+    }
+    val backgroundBrush = if (isDarkTheme) {
+        Brush.verticalGradient(listOf(Color(0xFF0B1C38), Color(0xFF05080F)))
+    } else {
+        Brush.verticalGradient(listOf(Color(0xFF4C86E8), Color(0xFFE9F1FF)))
+    }
     var showInfoDialog by remember { mutableStateOf(false) }
+    var showRenameDialog by remember { mutableStateOf(false) }
+    var showDeleteDialog by remember { mutableStateOf(false) }
+    var renameValue by remember { mutableStateOf("") }
+    var renameTarget by remember { mutableStateOf<GestureConfigStore.GestureConfig?>(null) }
+    var deleteTarget by remember { mutableStateOf<GestureConfigStore.GestureConfig?>(null) }
+    var presetRefreshTick by remember { mutableStateOf(0) }
 
     // --- DOUBLE-TAP DELAY SETTINGS (Re-added) ---
     val systemDoubleTap = ViewConfiguration.getDoubleTapTimeout()
@@ -299,8 +355,62 @@ fun AdvancedGestureScreen(navController: NavController, viewModel: OnboardingVie
         )
     }
 
+    if (showRenameDialog && renameTarget != null) {
+        AlertDialog(
+            onDismissRequest = { showRenameDialog = false },
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            title = { Text("Rename Preset") },
+            text = {
+                Column {
+                    Text("Enter a new name for this preset.", style = MaterialTheme.typography.bodyMedium)
+                    Spacer(Modifier.height(8.dp))
+                    TextField(
+                        value = renameValue,
+                        onValueChange = { renameValue = it },
+                        singleLine = true
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val target = renameTarget ?: return@TextButton
+                    val updated = GestureConfigStore.renamePreset(context, target, renameValue)
+                    viewModel.setGesturePreset(updated.fileName)
+                    presetRefreshTick++
+                    showRenameDialog = false
+                }) { Text("Rename") }
+            },
+            dismissButton = { TextButton(onClick = { showRenameDialog = false }) { Text("Cancel") } }
+        )
+    }
+
+    if (showDeleteDialog && deleteTarget != null) {
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            title = { Text("Delete Preset") },
+            text = { Text("This will permanently delete \"${deleteTarget?.name}\".") },
+            confirmButton = {
+                TextButton(onClick = {
+                    val target = deleteTarget ?: return@TextButton
+                    GestureConfigStore.deletePreset(context, target.fileName)
+                    val active = GestureConfigStore.getActiveConfig(context, forceRefresh = true)
+                    viewModel.setGesturePreset(active.fileName)
+                    presetRefreshTick++
+                    showDeleteDialog = false
+                }) { Text("Delete") }
+            },
+            dismissButton = { TextButton(onClick = { showDeleteDialog = false }) { Text("Cancel") } }
+        )
+    }
+
     Scaffold(containerColor = Color.Transparent) { padding ->
-        Box(modifier = Modifier.fillMaxSize().padding(padding)) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(backgroundBrush)
+                .padding(padding)
+        ) {
             // Content column with scroll and increased padding
             Column(
                 modifier = Modifier
@@ -314,33 +424,68 @@ fun AdvancedGestureScreen(navController: NavController, viewModel: OnboardingVie
                 
                 Spacer(modifier = Modifier.height(32.dp))
 
+                val gestureConfigs = remember(state.gesturePresetFile, presetRefreshTick) { GestureConfigStore.listConfigs(context) }
+                val topPackage = state.topAppPackage
+                val bottomPackage = state.bottomAppPackage
+
+                Text(text = "Gesture Presets", modifier = Modifier.padding(bottom = 8.dp), style = MaterialTheme.typography.bodyMedium)
+
+                GesturePresetCardRow(
+                    presets = gestureConfigs,
+                    activeFileName = state.gesturePresetFile,
+                    topAppPackage = topPackage,
+                    bottomAppPackage = bottomPackage,
+                    onSelect = {
+                        viewModel.setGesturePreset(it.fileName)
+                        Toast.makeText(context, "${it.name} is now active.", Toast.LENGTH_SHORT).show()
+                    },
+                    onEdit = {
+                        viewModel.setGesturePreset(it.fileName)
+                        onNavigate { navController.navigate("advanced_gesture_edit") }
+                    },
+                    onCopy = {
+                        GestureConfigStore.createDraftFromPreset(context, it)
+                        onNavigate { navController.navigate("advanced_gesture_edit") }
+                    },
+                    onShare = {
+                        try {
+                            val file = GestureConfigStore.getConfigFile(context, it.fileName)
+                            val uri = FileProvider.getUriForFile(context, context.packageName + ".provider", file)
+                            val intent = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_STREAM, uri)
+                                putExtra(Intent.EXTRA_SUBJECT, "Mjolnir Gesture Preset: ${it.name}")
+                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            }
+                            context.startActivity(Intent.createChooser(intent, "Share Preset"))
+                        } catch (e: Exception) {
+                            Toast.makeText(context, "Share failed: ${e.message}", Toast.LENGTH_LONG).show()
+                        }
+                    },
+                    onRename = {
+                        renameTarget = it
+                        renameValue = it.name
+                        showRenameDialog = true
+                    },
+                    onDelete = {
+                        deleteTarget = it
+                        showDeleteDialog = true
+                    },
+                    onNew = {
+                        val created = GestureConfigStore.createPresetFromActive(context)
+                        viewModel.setGesturePreset(created.fileName)
+                        presetRefreshTick++
+                        onNavigate { navController.navigate("advanced_gesture_edit") }
+                    },
+                    enableContextMenu = true
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Spacer(modifier = Modifier.height(24.dp))
+
                 // --- GRID LAYOUT: 4 Cols, 2 Rows ---
                 // Row 1: Headers
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                    GestureHeader("Single Tap", 1)
-                    GestureHeader("Double Tap", 2)
-                    GestureHeader("Triple Tap", 3)
-                    GestureHeader("Long Press", 0)
-                }
-                
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // Row 2: Actions (Dropdowns)
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                    Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                        GestureDropdown(state.singleHomeAction, isNavigating, state.topAppPackage, state.bottomAppPackage) { viewModel.setGestureAction(Gesture.SINGLE, it) }
-                    }
-                    Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                        GestureDropdown(state.doubleHomeAction, isNavigating, state.topAppPackage, state.bottomAppPackage) { viewModel.setGestureAction(Gesture.DOUBLE, it) }
-                    }
-                    Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                        GestureDropdown(state.tripleHomeAction, isNavigating, state.topAppPackage, state.bottomAppPackage) { viewModel.setGestureAction(Gesture.TRIPLE, it) }
-                    }
-                    Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                        GestureDropdown(state.longHomeAction, isNavigating, state.topAppPackage, state.bottomAppPackage) { viewModel.setGestureAction(Gesture.LONG, it) }
-                    }
-                }
-                
                 Spacer(modifier = Modifier.height(32.dp))
 
                 // --- Double Tap Delay Controls ---
@@ -395,8 +540,183 @@ fun AdvancedGestureScreen(navController: NavController, viewModel: OnboardingVie
             Box(modifier = Modifier.fillMaxSize().padding(16.dp)) {
                 OutlinedButton(onClick = { onNavigate { navController.popBackStack() } }, modifier = Modifier.align(Alignment.BottomStart).padding(bottom = 8.dp), enabled = !isNavigating) { Text("Back") }
                 IconButton(onClick = { showInfoDialog = true }, modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp), enabled = !isNavigating) { Icon(Icons.Default.Info, "Info", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
-                OutlinedButton(onClick = { onNavigate { viewModel.setHomeInterception(true); navController.navigate("advanced_dss") } }, modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 8.dp), enabled = !isNavigating) { Text("Next") }
+                OutlinedButton(onClick = { onNavigate { viewModel.setHomeInterception(true); navController.navigate("advanced_start_on_boot") } }, modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 8.dp), enabled = !isNavigating) { Text("Next") }
             }
+
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .height(72.dp)
+                        .background(
+                            Brush.verticalGradient(
+                                colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.7f))
+                            )
+                        )
+                )
+            }
+        }
+    }
+@Composable
+fun AdvancedStartOnBootScreen(navController: NavController, viewModel: OnboardingViewModel, isNavigating: Boolean, onNavigate: (() -> Unit) -> Unit) {
+    val context = LocalContext.current
+    val prefs = remember { context.settingsPrefs() }
+    var startOnBootAuto by remember { mutableStateOf(prefs.getBoolean(KEY_AUTO_BOOT_BOTH_HOME, true)) }
+    val canNavigate = !isNavigating
+    val switchFocusRequester = remember { FocusRequester() }
+    val pm = context.packageManager
+    val state by viewModel.uiState
+    val topPkg = remember(state.topAppPackage) { state.topAppPackage ?: prefs.getString(KEY_TOP_APP, null) }
+    val bottomPkg = remember(state.bottomAppPackage) { state.bottomAppPackage ?: prefs.getString(KEY_BOTTOM_APP, null) }
+
+    fun resolveAppLabel(pkg: String?): String {
+        if (pkg.isNullOrBlank()) return "<None>"
+        return runCatching {
+            pm.getApplicationInfo(pkg, 0).loadLabel(pm).toString()
+        }.getOrNull() ?: pkg
+    }
+
+    fun resolveAppIcon(pkg: String?): android.graphics.drawable.Drawable? {
+        if (pkg.isNullOrBlank()) return null
+        return runCatching { pm.getApplicationIcon(pkg) }.getOrNull()
+    }
+
+    val defaultHomePkg = remember {
+        val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+        val resolveInfo: ResolveInfo? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            pm.resolveActivity(intent, PackageManager.ResolveInfoFlags.of(PackageManager.MATCH_DEFAULT_ONLY.toLong()))
+        } else {
+            @Suppress("DEPRECATION")
+            pm.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)
+        }
+        resolveInfo?.activityInfo?.packageName
+    }
+
+    val topMissing = startOnBootAuto && topPkg.isNullOrBlank()
+    val bottomMissing = startOnBootAuto && bottomPkg.isNullOrBlank()
+    val topLabel = if (startOnBootAuto) resolveAppLabel(topPkg ?: defaultHomePkg) else resolveAppLabel(defaultHomePkg)
+    val bottomLabel = if (startOnBootAuto) resolveAppLabel(bottomPkg ?: defaultHomePkg) else resolveAppLabel(defaultHomePkg)
+    val topIcon = if (startOnBootAuto) resolveAppIcon(topPkg ?: defaultHomePkg) else resolveAppIcon(defaultHomePkg)
+    val bottomIcon = if (startOnBootAuto) resolveAppIcon(bottomPkg ?: defaultHomePkg) else resolveAppIcon(defaultHomePkg)
+
+    LaunchedEffect(Unit) {
+        switchFocusRequester.requestFocus()
+    }
+
+    Scaffold(containerColor = Color.Transparent) { padding ->
+        Box(modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp)) {
+            Column(
+                modifier = Modifier.align(Alignment.Center).fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text("Start on Boot", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.onBackground, textAlign = TextAlign.Center)
+                Spacer(modifier = Modifier.height(24.dp))
+
+                val cardHeight = 140.dp
+                val topCardWidth = cardHeight * (16f / 9f)
+                val bottomCardWidth = cardHeight * (4f / 3f)
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(24.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Column A spacer to center Column B
+                    Box(modifier = Modifier.width(120.dp))
+
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(20.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        IndicatorDisplayBox(
+                            title = null,
+                            label = topLabel,
+                            icon = topIcon,
+                            faded = topMissing,
+                            width = topCardWidth,
+                            height = cardHeight
+                        )
+                        IndicatorDisplayBox(
+                            title = null,
+                            label = bottomLabel,
+                            icon = bottomIcon,
+                            faded = !startOnBootAuto || bottomMissing,
+                            width = bottomCardWidth,
+                            height = cardHeight
+                        )
+                    }
+
+                    Box(
+                        modifier = Modifier.width(120.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Switch(
+                            checked = startOnBootAuto,
+                            onCheckedChange = {
+                                startOnBootAuto = it
+                                prefs.edit().putBoolean(KEY_AUTO_BOOT_BOTH_HOME, it).apply()
+                            },
+                            enabled = !isNavigating,
+                            modifier = Modifier.focusRequester(switchFocusRequester).focusable()
+                        )
+                    }
+                }
+            }
+
+            OutlinedButton(onClick = { onNavigate { navController.popBackStack() } }, modifier = Modifier.align(Alignment.BottomStart).padding(bottom = 8.dp), enabled = !isNavigating) { Text("Back") }
+            OutlinedButton(onClick = { onNavigate { navController.navigate("advanced_dss") } }, modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 8.dp), enabled = !isNavigating) { Text("Next") }
+        }
+    }
+}
+
+@Composable
+private fun IndicatorDisplayBox(
+    title: String?,
+    label: String,
+    icon: android.graphics.drawable.Drawable?,
+    faded: Boolean,
+    width: Dp,
+    height: Dp
+) {
+    val shape = MaterialTheme.shapes.large
+    val alpha = if (faded) 0.55f else 1f
+    Surface(
+        modifier = Modifier
+            .width(width)
+            .height(height),
+        shape = shape,
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f),
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(12.dp),
+            verticalArrangement = Arrangement.SpaceBetween,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            if (!title.isNullOrBlank()) {
+                Text(title, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else {
+                Spacer(Modifier.height(4.dp))
+            }
+            if (icon != null) {
+                Image(
+                    painter = rememberDrawablePainter(icon),
+                    contentDescription = null,
+                    modifier = Modifier.size(52.dp).alpha(alpha)
+                )
+            }
+            Text(
+                label,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = alpha),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center
+            )
         }
     }
 }
@@ -425,13 +745,16 @@ fun RowScope.GestureHeader(text: String, count: Int) {
 @Composable
 fun GestureDropdown(currentAction: Action, isNavigating: Boolean, topApp: String?, bottomApp: String?, onActionSelected: (Action) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val topLabel = remember(topApp) { topApp?.let { pkg -> runCatching { context.packageManager.getApplicationLabel(context.packageManager.getApplicationInfo(pkg, 0)).toString() }.getOrNull() } }
+    val bottomLabel = remember(bottomApp) { bottomApp?.let { pkg -> runCatching { context.packageManager.getApplicationLabel(context.packageManager.getApplicationInfo(pkg, 0)).toString() }.getOrNull() } }
     Box(modifier = Modifier.clickable(enabled = !isNavigating) { expanded = true }.padding(8.dp)) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             // Current Selection Icon
             ActionIcon(action = currentAction, topApp = topApp, bottomApp = bottomApp, size = 32.dp)
             
             Text(
-                text = actionLabel(currentAction), 
+                text = actionLabel(currentAction, topLabel, bottomLabel),
                 color = MaterialTheme.colorScheme.primary, 
                 style = MaterialTheme.typography.bodyMedium,
                 textAlign = TextAlign.Center,
@@ -444,13 +767,13 @@ fun GestureDropdown(currentAction: Action, isNavigating: Boolean, topApp: String
             onDismissRequest = { expanded = false },
             modifier = Modifier.background(MaterialTheme.colorScheme.surfaceContainerHigh)
         ) {
-            Action.values().forEach { action ->
+            orderedActions().forEach { action ->
                 DropdownMenuItem(
                     text = { 
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             ActionIcon(action = action, topApp = topApp, bottomApp = bottomApp, size = 24.dp)
                             Spacer(Modifier.width(8.dp))
-                            Text(actionLabel(action)) 
+                            Text(actionLabel(action, topLabel, bottomLabel))
                         }
                     }, 
                     onClick = { onActionSelected(action); expanded = false }
@@ -459,6 +782,7 @@ fun GestureDropdown(currentAction: Action, isNavigating: Boolean, topApp: String
         }
     }
 }
+
 
 @Composable
 fun ActionIcon(action: Action, topApp: String?, bottomApp: String?, size: androidx.compose.ui.unit.Dp) {
@@ -497,6 +821,19 @@ fun ActionIcon(action: Action, topApp: String?, bottomApp: String?, size: androi
             // Always use generic Home icon
             Icon(Icons.Default.Home, contentDescription = null, modifier = iconModifier)
         }
+        Action.TOP_HOME_DEFAULT -> Icon(Icons.Default.Home, contentDescription = null, modifier = iconModifier)
+        Action.BOTTOM_HOME_DEFAULT -> Icon(Icons.Default.Home, contentDescription = null, modifier = iconModifier)
+        Action.BOTH_HOME_DEFAULT -> Icon(Icons.Default.Home, contentDescription = null, modifier = iconModifier)
+        Action.FOCUS_AUTO -> Icon(Icons.Default.CenterFocusStrong, contentDescription = null, modifier = iconModifier)
+        Action.FOCUS_TOP_APP -> {
+            if (topApp != null) {
+                val pm = context.packageManager
+                val drawable = remember(topApp) { try { pm.getApplicationIcon(topApp) } catch(e: Exception) { null } }
+                Image(painter = rememberDrawablePainter(drawable), contentDescription = null, modifier = iconModifier)
+            } else {
+                Icon(Icons.Default.CenterFocusStrong, contentDescription = null, modifier = iconModifier)
+            }
+        }
         Action.APP_SWITCH -> Icon(Icons.Default.ViewCarousel, contentDescription = null, modifier = iconModifier)
         Action.NONE -> Icon(Icons.Default.Close, contentDescription = null, modifier = iconModifier)
     }
@@ -508,6 +845,8 @@ fun AdvancedDssScreen(navController: NavController, viewModel: OnboardingViewMod
     val state by viewModel.uiState
     var showInfoDialog by remember { mutableStateOf(false) }
     val storagePermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) Manifest.permission.READ_MEDIA_IMAGES else Manifest.permission.WRITE_EXTERNAL_STORAGE
+    val toggleFocusRequester = remember { FocusRequester() }
+    val canNavigate = !isNavigating
 
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted -> if (isGranted) viewModel.setDssAutoStitch(true) }
 
@@ -536,6 +875,10 @@ fun AdvancedDssScreen(navController: NavController, viewModel: OnboardingViewMod
             },
             confirmButton = { TextButton(onClick = { showInfoDialog = false }) { Text("Got it") } }
         )
+    }
+
+    LaunchedEffect(Unit) {
+        toggleFocusRequester.requestFocus()
     }
 
     Scaffold(containerColor = Color.Transparent) { padding ->
@@ -574,15 +917,15 @@ fun AdvancedDssScreen(navController: NavController, viewModel: OnboardingViewMod
                 
                 Button(
                     onClick = { toggleDss() }, 
-                    modifier = Modifier.fillMaxWidth(0.7f),
+                    modifier = Modifier.fillMaxWidth(0.7f).focusRequester(toggleFocusRequester).focusable(),
                     colors = buttonColors,
                     enabled = !isNavigating
                 ) { Text(if (state.dssAutoStitch) "Disable DualShot" else "Enable DualShot") }
             }
             
-            OutlinedButton(onClick = { onNavigate { navController.popBackStack() } }, modifier = Modifier.align(Alignment.BottomStart).padding(bottom = 8.dp), enabled = !isNavigating) { Text("Back") }
-            IconButton(onClick = { showInfoDialog = true }, modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp), enabled = !isNavigating) { Icon(Icons.Default.Info, "Info", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
-            OutlinedButton(onClick = { onNavigate { navController.navigate("advanced_set_default") } }, modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 8.dp), enabled = !isNavigating) { Text("Next") }
+                OutlinedButton(onClick = { onNavigate { navController.popBackStack() } }, modifier = Modifier.align(Alignment.BottomStart).padding(bottom = 8.dp), enabled = !isNavigating) { Text("Back") }
+                IconButton(onClick = { showInfoDialog = true }, modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp), enabled = !isNavigating) { Icon(Icons.Default.Info, "Info", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+                OutlinedButton(onClick = { onNavigate { navController.navigate("advanced_set_default") } }, modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 8.dp), enabled = !isNavigating) { Text("Next") }
         }
     }
 }
@@ -595,6 +938,8 @@ fun AdvancedSetDefaultHomeScreen(navController: NavController, viewModel: Onboar
     var currentHomePkg by remember { mutableStateOf<String?>(null) }
     var currentHomeLabel by remember { mutableStateOf("Checking...") }
     val lifecycleOwner = LocalLifecycleOwner.current
+    val setDefaultFocusRequester = remember { FocusRequester() }
+    val finishFocusRequester = remember { FocusRequester() }
 
     // --- REVISED LOGIC BLOCK ---
     val QUICKSTEP_PKG = "com.android.launcher3"
@@ -627,15 +972,12 @@ fun AdvancedSetDefaultHomeScreen(navController: NavController, viewModel: Onboar
         if (requirementMet && requiredDefaultPkg != null) {
             DiagnosticsLogger.logEvent("Onboarding", "AUTO_SAVE_VALID_CONFIG", "Committing Advanced prefs", context)
             val finalInterception = !(state.topAppPackage == null && state.bottomAppPackage == null) && state.homeInterceptionActive
-            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            val prefs = context.settingsPrefs()
             prefs.edit().apply {
                 putString(KEY_TOP_APP, state.topAppPackage)
                 putString(KEY_BOTTOM_APP, state.bottomAppPackage)
                 putBoolean(KEY_HOME_INTERCEPTION_ACTIVE, finalInterception)
-                putString(KEY_SINGLE_HOME_ACTION, state.singleHomeAction.name)
-                putString(KEY_DOUBLE_HOME_ACTION, state.doubleHomeAction.name)
-                putString(KEY_TRIPLE_HOME_ACTION, state.tripleHomeAction.name)
-                putString(KEY_LONG_HOME_ACTION, state.longHomeAction.name)
+                putString(KEY_ACTIVE_GESTURE_CONFIG, state.gesturePresetFile)
                 putBoolean(KEY_DSS_AUTO_STITCH, state.dssAutoStitch)
                 putInt(KEY_LAUNCH_FAILURE_COUNT, 0)
                 putBoolean(KEY_ONBOARDING_COMPLETE, true)
@@ -653,6 +995,14 @@ fun AdvancedSetDefaultHomeScreen(navController: NavController, viewModel: Onboar
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    LaunchedEffect(showSetDefaultButton, isFinishButtonEnabled) {
+        if (showSetDefaultButton) {
+            setDefaultFocusRequester.requestFocus()
+        } else if (isFinishButtonEnabled) {
+            finishFocusRequester.requestFocus()
+        }
     }
 
     val buttonColors = ButtonDefaults.buttonColors(
@@ -673,6 +1023,27 @@ fun AdvancedSetDefaultHomeScreen(navController: NavController, viewModel: Onboar
             },
             confirmButton = { TextButton(onClick = { showInfoDialog = false }) { Text("Got it") } }
         )
+    }
+
+    val handleFinish: () -> Unit = {
+        if (isFinishButtonEnabled) {
+            if (requiredDefaultPkg == null) {
+                DiagnosticsLogger.logEvent("Onboarding", "MANUAL_SAVE_ANY_DEFAULT", "Committing Advanced prefs", context)
+                val finalInterception = !(state.topAppPackage == null && state.bottomAppPackage == null) && state.homeInterceptionActive
+                val prefs = context.settingsPrefs()
+                prefs.edit().apply {
+                    putString(KEY_TOP_APP, state.topAppPackage)
+                    putString(KEY_BOTTOM_APP, state.bottomAppPackage)
+                    putBoolean(KEY_HOME_INTERCEPTION_ACTIVE, finalInterception)
+                    putString(KEY_ACTIVE_GESTURE_CONFIG, state.gesturePresetFile)
+                    putBoolean(KEY_DSS_AUTO_STITCH, state.dssAutoStitch)
+                    putInt(KEY_LAUNCH_FAILURE_COUNT, 0)
+                    putBoolean(KEY_ONBOARDING_COMPLETE, true)
+                    putBoolean(KEY_ENABLE_FOCUS_LOCK_WORKAROUND, true)
+                }.commit()
+            }
+            onNavigate { onFinish() }
+        }
     }
 
     Scaffold(containerColor = Color.Transparent) { padding ->
@@ -720,7 +1091,7 @@ fun AdvancedSetDefaultHomeScreen(navController: NavController, viewModel: Onboar
                             val intent = Intent(Settings.ACTION_HOME_SETTINGS)
                             homePickerLauncher.launch(intent)
                         },
-                        modifier = Modifier.fillMaxWidth(0.7f),
+                        modifier = Modifier.fillMaxWidth(0.7f).focusRequester(setDefaultFocusRequester).focusable(),
                         colors = buttonColors,
                         enabled = !isNavigating
                     ) { Text("Set Default Home") }
@@ -730,35 +1101,14 @@ fun AdvancedSetDefaultHomeScreen(navController: NavController, viewModel: Onboar
             OutlinedButton(onClick = { onNavigate { navController.popBackStack() } }, modifier = Modifier.align(Alignment.BottomStart).padding(bottom = 8.dp), enabled = !isNavigating) { Text("Back") }
             IconButton(onClick = { showInfoDialog = true }, modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp), enabled = !isNavigating) { Icon(Icons.Default.Info, "Info", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
 
-            OutlinedButton(
-                onClick = {
-                    // When user clicks finish/skip, manually commit the state if no requirement was needed.
-                    if (requiredDefaultPkg == null) {
-                        DiagnosticsLogger.logEvent("Onboarding", "MANUAL_SAVE_ANY_DEFAULT", "Committing Advanced prefs", context)
-                        val finalInterception = !(state.topAppPackage == null && state.bottomAppPackage == null) && state.homeInterceptionActive
-                        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                        prefs.edit().apply {
-                            putString(KEY_TOP_APP, state.topAppPackage)
-                            putString(KEY_BOTTOM_APP, state.bottomAppPackage)
-                            putBoolean(KEY_HOME_INTERCEPTION_ACTIVE, finalInterception)
-                            putString(KEY_SINGLE_HOME_ACTION, state.singleHomeAction.name)
-                            putString(KEY_DOUBLE_HOME_ACTION, state.doubleHomeAction.name)
-                            putString(KEY_TRIPLE_HOME_ACTION, state.tripleHomeAction.name)
-                            putString(KEY_LONG_HOME_ACTION, state.longHomeAction.name)
-                            putBoolean(KEY_DSS_AUTO_STITCH, state.dssAutoStitch)
-                            putInt(KEY_LAUNCH_FAILURE_COUNT, 0)
-                            putBoolean(KEY_ONBOARDING_COMPLETE, true)
-                            putBoolean(KEY_ENABLE_FOCUS_LOCK_WORKAROUND, true)
-                        }.commit()
-                    }
-                    onNavigate { onFinish() }
-                },
-                modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 8.dp),
-                enabled = isFinishButtonEnabled
-            ) {
-                Text(finishButtonText)
+                OutlinedButton(
+                    onClick = handleFinish,
+                    modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 8.dp).focusRequester(finishFocusRequester).focusable(),
+                    enabled = isFinishButtonEnabled
+                ) {
+                    Text(finishButtonText)
+                }
             }
-        }
     }
 }
 
