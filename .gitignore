@@ -9,3 +9,5 @@
 local.properties
 /.idea
 /app/release
+/.google/
+/.googleold/
