@@ -12,6 +12,7 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.edit
 import xyz.blacksheep.mjolnir.services.KeepAliveService
 import xyz.blacksheep.mjolnir.utils.DiagnosticsLogger
+import xyz.blacksheep.mjolnir.settings.settingsPrefs
 
 /**
  * A transparent Activity to request runtime permissions for Auto-Stitch DSS.
@@ -23,7 +24,7 @@ class DssPermissionActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+        prefs = settingsPrefs()
 
         if (hasStoragePermission()) {
             enableFeature()

@@ -16,6 +16,11 @@
         <item name="android:backgroundDimEnabled">false</item>
     </style>
 
+    <style name="Theme.Mjolnir.SafetyNet" parent="Theme.Mjolnir">
+        <item name="android:windowBackground">@android:color/black</item>
+        <item name="android:windowAnimationStyle">@style/Animation.Mjolnir.NoAnimation</item>
+    </style>
+
     <!-- Theme for the focus-stealing activity. It's fully translucent and has no animations. -->
     <style name="Theme.Mjolnir.FocusStealer" parent="@android:style/Theme.Translucent.NoTitleBar.Fullscreen">
         <item name="android:windowIsTranslucent">true</item>

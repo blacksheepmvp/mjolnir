@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.SharedPreferences
+import android.content.pm.PackageManager
 import android.hardware.display.DisplayManager
 import android.os.Build
 import android.os.Handler
@@ -15,6 +16,7 @@ import android.os.Looper
 import android.os.SystemClock
 import android.os.VibrationEffect
 import android.os.Vibrator
+import android.provider.Settings
 import android.view.KeyEvent
 import android.view.ViewConfiguration
 import android.view.accessibility.AccessibilityEvent
@@ -33,6 +35,8 @@ import xyz.blacksheep.mjolnir.services.KeepAliveService
 import xyz.blacksheep.mjolnir.utils.DiagnosticsLogger
 import xyz.blacksheep.mjolnir.utils.DualScreenLauncher
 import xyz.blacksheep.mjolnir.workarounds.FocusLockOverlayWorkaround
+import xyz.blacksheep.mjolnir.settings.settingsPrefs
+import xyz.blacksheep.mjolnir.settings.GestureConfigStore
 
 /**
  * The core engine of Mjolnir's gesture system.
@@ -56,6 +60,7 @@ class HomeKeyInterceptorService : AccessibilityService(), SharedPreferences.OnSh
         var instance: HomeKeyInterceptorService? = null
         const val ACTION_REQ_COLLAPSE_SHADE = "xyz.blacksheep.mjolnir.ACTION_REQ_COLLAPSE_SHADE"
         const val ACTION_REQ_SWAP_SCREENS = "xyz.blacksheep.mjolnir.ACTION_REQ_SWAP_SCREENS"
+        @Volatile var lastFocusedDisplayId: Int? = null
     }
 
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
@@ -71,6 +76,14 @@ class HomeKeyInterceptorService : AccessibilityService(), SharedPreferences.OnSh
 
     private var useSystemDoubleTapDelay: Boolean = true
     private var customDoubleTapDelay: Int = 0
+    private var longPressDelayMs: Int = ViewConfiguration.getLongPressTimeout()
+    private var activeGestureConfig: GestureConfigStore.GestureConfig? = null
+    private var pendingBootBottomLaunch = false
+    private var pendingBootDefaultHome: String? = null
+    private var pendingBootLogCount = 0
+    private var pendingBootBottomDisplayId: Int? = null
+    private var bootBottomLaunchDone = false
+    private var bootBottomRetryDone = false
 
     private val ENABLE_GESTURE_TOAST = false
     private val ENABLE_GESTURE_HAPTIC = true
@@ -93,13 +106,61 @@ class HomeKeyInterceptorService : AccessibilityService(), SharedPreferences.OnSh
         }
     }
 
+    private val focusChangeObserver = object : android.database.ContentObserver(Handler(Looper.getMainLooper())) {
+        override fun onChange(selfChange: Boolean) {
+            super.onChange(selfChange)
+            val focusValue = try {
+                Settings.System.getInt(contentResolver, "focus_change", -1)
+            } catch (e: Exception) {
+                -1
+            }
+            DiagnosticsLogger.logEvent("Focus", "SYSTEM_FOCUS_CHANGE", "value=$focusValue", this@HomeKeyInterceptorService)
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+                DiagnosticsLogger.logEvent("Focus", "SYSTEM_FOCUS_SCAN_SKIPPED", "reason=ApiTooLow", this@HomeKeyInterceptorService)
+                return
+            }
+
+            val windows = windows
+            val focused = windows.firstOrNull { it.isFocused && it.type == AccessibilityWindowInfo.TYPE_APPLICATION }
+            val active = windows.firstOrNull { it.isActive && it.type == AccessibilityWindowInfo.TYPE_APPLICATION }
+            val anyApp = windows.firstOrNull { it.type == AccessibilityWindowInfo.TYPE_APPLICATION }
+            val chosen = focused ?: active ?: anyApp
+            val displayId = chosen?.displayId
+            if (displayId != null) {
+                lastFocusedDisplayId = displayId
+                DiagnosticsLogger.logEvent(
+                    "Focus",
+                    "SYSTEM_FOCUS_RESOLVED",
+                    "displayId=$displayId pkg=${chosen.root?.packageName} focused=${chosen.isFocused} active=${chosen.isActive} windowId=${chosen.id}",
+                    this@HomeKeyInterceptorService
+                )
+            } else {
+                val windowDump = windows.joinToString(
+                    prefix = "[",
+                    postfix = "]",
+                    limit = 12,
+                    truncated = "..."
+                ) { win ->
+                    val winPkg = win.root?.packageName?.toString()
+                    "id=${win.id},disp=${win.displayId},type=${win.type},focused=${win.isFocused},active=${win.isActive},pkg=$winPkg"
+                }
+                DiagnosticsLogger.logEvent(
+                    "Focus",
+                    "SYSTEM_FOCUS_UNRESOLVED",
+                    "windowCount=${windows.size} windows=$windowDump",
+                    this@HomeKeyInterceptorService
+                )
+            }
+        }
+    }
+
 
     @SuppressLint("UnspecifiedRegisterReceiverFlag")
     override fun onServiceConnected() {
         super.onServiceConnected()
         DiagnosticsLogger.logEvent("Service", "ACCESSIBILITY_CONNECTED", context = this)
         instance = this
-        prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+        prefs = settingsPrefs()
         prefs.registerOnSharedPreferenceChangeListener(this)
         actionLauncher = HomeActionLauncher(this)
         updateGestureConfig()
@@ -115,6 +176,21 @@ class HomeKeyInterceptorService : AccessibilityService(), SharedPreferences.OnSh
             registerReceiver(collapseShadeReceiver, filter)
         }
 
+        try {
+            contentResolver.registerContentObserver(
+                Settings.System.getUriFor("focus_change"),
+                false,
+                focusChangeObserver
+            )
+            val initial = Settings.System.getInt(contentResolver, "focus_change", -1)
+            if (initial != -1) {
+                lastFocusedDisplayId = initial
+            }
+            DiagnosticsLogger.logEvent("Focus", "SYSTEM_FOCUS_OBSERVER_REGISTERED", "initial=$initial", this)
+        } catch (e: Exception) {
+            DiagnosticsLogger.logEvent("Focus", "SYSTEM_FOCUS_OBSERVER_FAILED", "message=${e.message}", this)
+        }
+
         // Start the foreground KeepAliveService to keep this process alive.
         // Also explicitly tell it to update its status notification immediately.
         Handler(Looper.getMainLooper()).postDelayed({
@@ -128,21 +204,72 @@ class HomeKeyInterceptorService : AccessibilityService(), SharedPreferences.OnSh
                 startService(intent)
             }
         }, 250)
-        
-        /*
-        // Auto-run BOTH_HOME on boot if enabled
-        try {
-            val autoBootHome = prefs.getBoolean(KEY_AUTO_BOOT_BOTH_HOME, true)
 
-            if (autoBootHome) {
-                DiagnosticsLogger.logEvent("Gesture", "AUTO_BOOT_ACTION", "action=BOTH_HOME", this)
-                performAction(Action.BOTH_HOME)
+        maybeRunBootAction()
+    }
+
+    private fun maybeRunBootAction() {
+        try {
+            val prefs = settingsPrefs()
+            val isAdvanced = prefs.getBoolean(KEY_HOME_INTERCEPTION_ACTIVE, false)
+            if (!isAdvanced) {
+                DiagnosticsLogger.logEvent("Gesture", "AUTO_BOOT_SKIPPED", "reason=not_advanced", this)
+                return
             }
 
+            val isFresh = isFreshBoot(prefs)
+            if (!isFresh) {
+                DiagnosticsLogger.logEvent("Gesture", "AUTO_BOOT_SKIPPED", "reason=not_fresh_boot", this)
+                return
+            }
+
+            val startOnBootAuto = prefs.getBoolean(KEY_AUTO_BOOT_BOTH_HOME, true)
+            if (startOnBootAuto) {
+                val defaultHome = getCurrentDefaultHomePackage()
+                if (!defaultHome.isNullOrBlank() && defaultHome != packageName) {
+                    pendingBootDefaultHome = defaultHome
+                    pendingBootBottomLaunch = true
+                    pendingBootLogCount = 0
+                    bootBottomLaunchDone = false
+                    bootBottomRetryDone = false
+                    pendingBootBottomDisplayId = runCatching {
+                        val dm = getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
+                        dm.displays.getOrNull(1)?.displayId
+                    }.getOrNull()
+                    DiagnosticsLogger.logEvent("Gesture", "AUTO_BOOT_ACTION", "action=BOTH_HOME_DEFER_BOTTOM defaultHome=$defaultHome", this)
+                    actionLauncher.launchTop()
+                    return
+                }
+                DiagnosticsLogger.logEvent("Gesture", "AUTO_BOOT_ACTION", "action=BOTH_HOME", this)
+                performAction(Action.BOTH_HOME)
+            } else {
+                DiagnosticsLogger.logEvent("Gesture", "AUTO_BOOT_ACTION", "action=BOTH_HOME_DEFAULT", this)
+                performAction(Action.BOTH_HOME_DEFAULT)
+            }
         } catch (e: Exception) {
             DiagnosticsLogger.logException("Gesture", e, this)
         }
-        */
+    }
+
+    private fun isFreshBoot(prefs: SharedPreferences): Boolean {
+        val bootCount = runCatching {
+            Settings.Global.getInt(contentResolver, Settings.Global.BOOT_COUNT)
+        }.getOrNull()
+
+        if (bootCount != null && bootCount >= 0) {
+            val lastBootCount = prefs.getInt(KEY_LAST_BOOT_COUNT, -1)
+            if (bootCount != lastBootCount) {
+                prefs.edit().putInt(KEY_LAST_BOOT_COUNT, bootCount).apply()
+                return true
+            }
+            return false
+        }
+
+        val elapsed = SystemClock.elapsedRealtime()
+        val lastElapsed = prefs.getLong(KEY_LAST_BOOT_ELAPSED, -1L)
+        val fresh = lastElapsed < 0L || elapsed < lastElapsed
+        prefs.edit().putLong(KEY_LAST_BOOT_ELAPSED, elapsed).apply()
+        return fresh
     }
 
     private fun performScreenSwap() {
@@ -263,7 +390,7 @@ class HomeKeyInterceptorService : AccessibilityService(), SharedPreferences.OnSh
                 }
                 gestureHandler.postDelayed(
                     longPressRunnable!!,
-                    ViewConfiguration.getLongPressTimeout().toLong()
+                    longPressDelayMs.toLong()
                 )
             }
 
@@ -328,7 +455,9 @@ class HomeKeyInterceptorService : AccessibilityService(), SharedPreferences.OnSh
 
             // Optional feedback
             provideHapticFeedback()
-            provideToastFeedback("$gesture → ${actionLabel(action)}")
+            val topLabel = actionLauncher.getTopAppLabel()
+            val bottomLabel = actionLauncher.getBottomAppLabel()
+            provideToastFeedback("$gesture → ${actionLabel(action, topLabel, bottomLabel)}")
 
             // Trigger the launcher action
             performAction(action)
@@ -360,6 +489,8 @@ class HomeKeyInterceptorService : AccessibilityService(), SharedPreferences.OnSh
             Action.TOP_HOME -> actionLauncher.launchTop()
             Action.BOTTOM_HOME -> actionLauncher.launchBottom()
             Action.BOTH_HOME -> actionLauncher.launchBoth()
+            Action.FOCUS_AUTO -> actionLauncher.launchFocusAuto()
+            Action.FOCUS_TOP_APP -> actionLauncher.launchFocusTopApp()
             Action.NONE -> { /* no-op */ }
             Action.APP_SWITCH -> {
                 DiagnosticsLogger.logEvent("Gesture", "ACTION_RECENTS_TRIGGERED", context = this)
@@ -368,6 +499,18 @@ class HomeKeyInterceptorService : AccessibilityService(), SharedPreferences.OnSh
             Action.DEFAULT_HOME -> {
                 DiagnosticsLogger.logEvent("Gesture", "ACTION_HOME_PASSTHROUGH", context = this)
                 performGlobalAction(GLOBAL_ACTION_HOME)
+            }
+            Action.TOP_HOME_DEFAULT -> {
+                DiagnosticsLogger.logEvent("Gesture", "ACTION_HOME_TOP_TRIGGERED", context = this)
+                actionLauncher.launchDefaultHomeOnTop()
+            }
+            Action.BOTTOM_HOME_DEFAULT -> {
+                DiagnosticsLogger.logEvent("Gesture", "ACTION_HOME_BOTTOM_TRIGGERED", context = this)
+                actionLauncher.launchDefaultHomeOnBottom()
+            }
+            Action.BOTH_HOME_DEFAULT -> {
+                DiagnosticsLogger.logEvent("Gesture", "ACTION_HOME_BOTH_TRIGGERED", context = this)
+                actionLauncher.launchDefaultHomeOnBoth()
             }
         }
 
@@ -382,7 +525,10 @@ class HomeKeyInterceptorService : AccessibilityService(), SharedPreferences.OnSh
 
         // 2. Check if action involves TOP display
         val involvesTop = when (action) {
-            Action.TOP_HOME, Action.BOTH_HOME -> true
+            Action.TOP_HOME,
+            Action.BOTH_HOME,
+            Action.TOP_HOME_DEFAULT,
+            Action.BOTH_HOME_DEFAULT -> true
             else -> false
         }
 
@@ -401,13 +547,118 @@ class HomeKeyInterceptorService : AccessibilityService(), SharedPreferences.OnSh
     }
 
     private fun updateGestureConfig() {
+        val config = GestureConfigStore.getActiveConfig(this)
+        activeGestureConfig = config
+        longPressDelayMs = if (config.longPressDelayMs > 0) {
+            config.longPressDelayMs
+        } else {
+            ViewConfiguration.getLongPressTimeout()
+        }
         useSystemDoubleTapDelay = prefs.getBoolean(KEY_USE_SYSTEM_DOUBLE_TAP_DELAY, true)
         customDoubleTapDelay = prefs.getInt(KEY_CUSTOM_DOUBLE_TAP_DELAY, ViewConfiguration.getDoubleTapTimeout())
-        DiagnosticsLogger.logEvent("Prefs", "GESTURE_CONFIG_UPDATED", "useSystemDelay=$useSystemDoubleTapDelay customDelay=$customDoubleTapDelay", this)
+        DiagnosticsLogger.logEvent(
+            "Prefs",
+            "GESTURE_CONFIG_UPDATED",
+            "preset=${config.fileName} name=${config.name} longPressDelay=$longPressDelayMs useSystemDelay=$useSystemDoubleTapDelay customDelay=$customDoubleTapDelay",
+            this
+        )
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
-        // Not used for this feature
+        if (pendingBootBottomLaunch) {
+            val eventPkg = event.packageName?.toString()
+            val defaultHome = pendingBootDefaultHome
+            val matchesEvent = event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED && eventPkg == defaultHome
+            val windowsMatch = defaultHome != null && windows.any { it.root?.packageName?.toString() == defaultHome }
+
+            if (matchesEvent || windowsMatch) {
+                pendingBootBottomLaunch = false
+                val reason = if (matchesEvent) "event" else "windows"
+                DiagnosticsLogger.logEvent("Gesture", "AUTO_BOOT_BOTTOM_LAUNCH", "defaultHome=$defaultHome reason=$reason delayMs=150", this)
+                Handler(Looper.getMainLooper()).postDelayed({
+                    bootBottomLaunchDone = true
+                    actionLauncher.launchBottom()
+                }, 150)
+            } else if (pendingBootLogCount < 6) {
+                pendingBootLogCount++
+                val windowDump = windows.joinToString(
+                    prefix = "[",
+                    postfix = "]",
+                    limit = 6,
+                    truncated = "..."
+                ) { win ->
+                    val winPkg = win.root?.packageName?.toString()
+                    "disp=${win.displayId},type=${win.type},focused=${win.isFocused},pkg=$winPkg"
+                }
+                DiagnosticsLogger.logEvent(
+                    "Gesture",
+                    "AUTO_BOOT_WAITING",
+                    "type=${event.eventType} pkg=$eventPkg defaultHome=$defaultHome windows=$windowDump",
+                    this
+                )
+            }
+        }
+
+        val eventType = event.eventType
+        val isFocusEvent = eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED ||
+            eventType == AccessibilityEvent.TYPE_WINDOWS_CHANGED ||
+            eventType == AccessibilityEvent.TYPE_VIEW_FOCUSED ||
+            eventType == AccessibilityEvent.TYPE_VIEW_CLICKED ||
+            eventType == AccessibilityEvent.TYPE_TOUCH_INTERACTION_START ||
+            eventType == AccessibilityEvent.TYPE_TOUCH_INTERACTION_END
+
+        if (!isFocusEvent) return
+
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            DiagnosticsLogger.logEvent("Focus", "EVENT_IGNORED", "reason=ApiTooLow type=$eventType", this)
+            return
+        }
+
+        val eventDisplayId = event.displayId
+        if (eventDisplayId != -1) {
+            lastFocusedDisplayId = eventDisplayId
+            DiagnosticsLogger.logEvent(
+                "Focus",
+                "EVENT_DISPLAY_CAPTURED",
+                "type=$eventType displayId=$eventDisplayId windowId=${event.windowId} pkg=${event.packageName}",
+                this
+            )
+            maybeRetryBootBottom(eventDisplayId, event.packageName?.toString())
+            return
+        }
+
+        val windowId = event.windowId
+        val windows = windows
+        val window = windows.firstOrNull { it.id == windowId }
+        val displayId = window?.displayId
+        val pkg = event.packageName?.toString()
+
+        if (displayId != null) {
+            lastFocusedDisplayId = displayId
+            DiagnosticsLogger.logEvent(
+                "Focus",
+                "EVENT_CAPTURED",
+                "type=$eventType windowId=$windowId displayId=$displayId pkg=$pkg windowCount=${windows.size}",
+                this
+            )
+            maybeRetryBootBottom(displayId, pkg)
+        } else {
+            val windowDump = windows.joinToString(
+                prefix = "[",
+                postfix = "]",
+                limit = 12,
+                truncated = "..."
+            ) { win ->
+                val winPkg = win.root?.packageName?.toString()
+                "id=${win.id},disp=${win.displayId},type=${win.type},focused=${win.isFocused},active=${win.isActive},pkg=$winPkg"
+            }
+            DiagnosticsLogger.logEvent(
+                "Focus",
+                "EVENT_UNMAPPED",
+                "type=$eventType windowId=$windowId pkg=$pkg windowCount=${windows.size} windows=$windowDump",
+                this
+            )
+        }
     }
 
     override fun onSharedPreferenceChanged(sharedPreferences: SharedPreferences?, key: String?) {
@@ -416,24 +667,44 @@ class HomeKeyInterceptorService : AccessibilityService(), SharedPreferences.OnSh
            KEY_DOUBLE_HOME_ACTION,
            KEY_TRIPLE_HOME_ACTION,
            KEY_LONG_HOME_ACTION,
+           KEY_ACTIVE_GESTURE_CONFIG,
            KEY_USE_SYSTEM_DOUBLE_TAP_DELAY,
            KEY_CUSTOM_DOUBLE_TAP_DELAY -> updateGestureConfig()
        }
     }
 
     private fun getConfiguredActionForGesture(gesture: Gesture): Action {
+        val config = activeGestureConfig ?: GestureConfigStore.getActiveConfig(this)
         return when (gesture) {
-            Gesture.SINGLE_HOME ->
-                Action.valueOf(prefs.getString(KEY_SINGLE_HOME_ACTION, Action.BOTH_HOME.name)!!)
+            Gesture.SINGLE_HOME -> config.single
+            Gesture.DOUBLE_HOME -> config.double
+            Gesture.TRIPLE_HOME -> config.triple
+            Gesture.LONG_HOME -> config.long
+        }
+    }
 
-            Gesture.DOUBLE_HOME ->
-                Action.valueOf(prefs.getString(KEY_DOUBLE_HOME_ACTION, Action.NONE.name)!!)
+    private fun getCurrentDefaultHomePackage(): String? {
+        val pm = packageManager
+        val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+        val resolveInfo: android.content.pm.ResolveInfo? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            pm.resolveActivity(intent, PackageManager.ResolveInfoFlags.of(PackageManager.MATCH_DEFAULT_ONLY.toLong()))
+        } else {
+            @Suppress("DEPRECATION")
+            pm.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)
+        }
+        return resolveInfo?.activityInfo?.packageName
+    }
 
-            Gesture.TRIPLE_HOME ->
-                Action.valueOf(prefs.getString(KEY_TRIPLE_HOME_ACTION, Action.NONE.name)!!)
-
-            Gesture.LONG_HOME ->
-                Action.valueOf(prefs.getString(KEY_LONG_HOME_ACTION, Action.NONE.name)!!)
+    private fun maybeRetryBootBottom(displayId: Int, pkg: String?) {
+        if (!bootBottomLaunchDone || bootBottomRetryDone) return
+        val defaultHome = pendingBootDefaultHome ?: return
+        val bottomDisplayId = pendingBootBottomDisplayId ?: return
+        if (displayId == bottomDisplayId && pkg == defaultHome) {
+            bootBottomRetryDone = true
+            DiagnosticsLogger.logEvent("Gesture", "AUTO_BOOT_BOTTOM_RETRY", "defaultHome=$defaultHome delayMs=150", this)
+            Handler(Looper.getMainLooper()).postDelayed({
+                actionLauncher.launchBottom()
+            }, 150)
         }
     }
 
@@ -463,6 +734,7 @@ class HomeKeyInterceptorService : AccessibilityService(), SharedPreferences.OnSh
     override fun onInterrupt() {
         DiagnosticsLogger.logEvent("Service", "ACCESSIBILITY_INTERRUPTED", context = this)
         instance = null
+        lastFocusedDisplayId = null
         resetGestureState()
     }
 
@@ -470,6 +742,9 @@ class HomeKeyInterceptorService : AccessibilityService(), SharedPreferences.OnSh
         DiagnosticsLogger.logEvent("Service", "ACCESSIBILITY_UNBOUND", context = this)
         try {
             unregisterReceiver(collapseShadeReceiver)
+        } catch (e: Exception) { /* ignore */ }
+        try {
+            contentResolver.unregisterContentObserver(focusChangeObserver)
         } catch (e: Exception) { /* ignore */ }
         instance = null
         stopKeepAliveService()
@@ -483,9 +758,13 @@ class HomeKeyInterceptorService : AccessibilityService(), SharedPreferences.OnSh
         try {
             unregisterReceiver(collapseShadeReceiver)
         } catch (e: Exception) { /* ignore */ }
+        try {
+            contentResolver.unregisterContentObserver(focusChangeObserver)
+        } catch (e: Exception) { /* ignore */ }
         stopKeepAliveService()
         prefs.unregisterOnSharedPreferenceChangeListener(this)
         serviceScope.cancel()
+        lastFocusedDisplayId = null
         resetGestureState()
     }
 

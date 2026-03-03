@@ -13,6 +13,7 @@ import android.text.TextUtils
 import android.widget.Toast
 import androidx.core.content.edit
 import xyz.blacksheep.mjolnir.utils.DiagnosticsLogger
+import xyz.blacksheep.mjolnir.settings.settingsPrefs
 
 /**
  * A Quick Settings Tile that allows the user to toggle the Home Button Interception feature on/off.
@@ -35,7 +36,7 @@ class MjolnirHomeTileService : TileService(), SharedPreferences.OnSharedPreferen
 
     override fun onCreate() {
         super.onCreate()
-        prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+        prefs = settingsPrefs()
         prefs.registerOnSharedPreferenceChangeListener(this)
     }
 

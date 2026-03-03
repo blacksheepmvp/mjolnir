@@ -38,6 +38,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -46,10 +47,14 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.focusable
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
@@ -61,11 +66,14 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import xyz.blacksheep.mjolnir.KEY_THEME
 import xyz.blacksheep.mjolnir.PREFS_NAME
-import xyz.blacksheep.mjolnir.settings.AppTheme
+import xyz.blacksheep.mjolnir.model.AppTheme
 import xyz.blacksheep.mjolnir.settings.BlacklistSettingsScreen
+import xyz.blacksheep.mjolnir.settings.GestureConfigStore
+import xyz.blacksheep.mjolnir.settings.GesturePresetEditorScreen
 import xyz.blacksheep.mjolnir.utils.DiagnosticsConfig
 import xyz.blacksheep.mjolnir.utils.DiagnosticsLogger
 import android.graphics.Color as AndroidColor
+import xyz.blacksheep.mjolnir.settings.settingsPrefs
 
 class OnboardingActivity : ComponentActivity() {
 
@@ -78,7 +86,7 @@ class OnboardingActivity : ComponentActivity() {
 
         setContent {
             val context = LocalContext.current
-            val prefs = remember { context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE) }
+            val prefs = remember { context.settingsPrefs() }
 
             val themeName = remember { prefs.getString(KEY_THEME, AppTheme.SYSTEM.name) }
             val appTheme = remember(themeName) {
@@ -128,7 +136,6 @@ class OnboardingActivity : ComponentActivity() {
             }
         }
     }
-}
 
 @Composable
 private fun OnboardingTheme(
@@ -211,6 +218,47 @@ fun OnboardingNavHost(viewModel: OnboardingViewModel) {
             composable("advanced_accessibility") { AdvancedAccessibilityScreen(navController, isNavigating = isNavigating, onNavigate = ::onNavigate) }
             composable("advanced_home_selection") { AdvancedHomeSelectionScreen(navController, viewModel, isNavigating = isNavigating, onNavigate = ::onNavigate) }
             composable("advanced_gestures") { AdvancedGestureScreen(navController, viewModel, isNavigating = isNavigating, onNavigate = ::onNavigate) }
+            composable("advanced_start_on_boot") { AdvancedStartOnBootScreen(navController, viewModel, isNavigating = isNavigating, onNavigate = ::onNavigate) }
+            composable("advanced_gesture_edit") {
+                val context = LocalContext.current
+                val state by viewModel.uiState
+                val config = GestureConfigStore.peekDraft() ?: GestureConfigStore.getActiveConfig(context, forceRefresh = true)
+                val isDraft = remember { GestureConfigStore.peekDraft() != null }
+                var nameValue by remember { mutableStateOf(config.name) }
+                var workingConfig by remember { mutableStateOf(config) }
+                GesturePresetEditorScreen(
+                    title = "Edit Gesture Preset",
+                    presetName = nameValue,
+                    topAppPackage = state.topAppPackage,
+                    bottomAppPackage = state.bottomAppPackage,
+                    config = workingConfig,
+                    onConfigChange = { updated ->
+                        workingConfig = updated
+                    },
+                    onNameChange = { nameValue = it },
+                    onSave = {
+                        val saved = if (isDraft) {
+                            GestureConfigStore.saveDraft(context, workingConfig, nameValue)
+                        } else {
+                            val renamed = GestureConfigStore.renamePreset(context, workingConfig, nameValue)
+                            GestureConfigStore.saveConfig(context, renamed)
+                            GestureConfigStore.setActiveConfig(context, renamed.fileName)
+                            renamed
+                        }
+                        viewModel.setGesturePreset(saved.fileName)
+                        viewModel.setGestureAction(Gesture.SINGLE, saved.single)
+                        viewModel.setGestureAction(Gesture.DOUBLE, saved.double)
+                        viewModel.setGestureAction(Gesture.TRIPLE, saved.triple)
+                        viewModel.setGestureAction(Gesture.LONG, saved.long)
+                        viewModel.setLongPressDelay(saved.longPressDelayMs)
+                        navController.popBackStack()
+                    },
+                    onCancel = {
+                        if (isDraft) GestureConfigStore.clearDraft()
+                        navController.popBackStack()
+                    }
+                )
+            }
             composable("advanced_dss") { AdvancedDssScreen(navController, viewModel, isNavigating = isNavigating, onNavigate = ::onNavigate) }
             composable("advanced_set_default") { AdvancedSetDefaultHomeScreen(navController, viewModel, onFinish = ::finishOnboarding, isNavigating = isNavigating, onNavigate = ::onNavigate) }
             composable("no_home") { NoHomeSetupScreen(navController, onFinish = ::finishOnboarding, isNavigating = isNavigating, onNavigate = ::onNavigate) }
@@ -237,6 +285,7 @@ fun EntryScreen(navController: NavController, onFinish: () -> Unit, isNavigating
     val context = LocalContext.current
     val diagnosticsEnabled = remember { mutableStateOf(DiagnosticsConfig.isEnabled(context)) }
     var showInfoDialog by remember { mutableStateOf(false) }
+    val basicFocusRequester = remember { FocusRequester() }
 
     BackHandler(enabled = true) {
         onNavigate(onFinish)
@@ -269,6 +318,10 @@ fun EntryScreen(navController: NavController, onFinish: () -> Unit, isNavigating
         )
     }
 
+    LaunchedEffect(Unit) {
+        basicFocusRequester.requestFocus()
+    }
+
     Scaffold(containerColor = Color.Transparent) { padding ->
         Box(
             modifier = Modifier
@@ -291,23 +344,32 @@ fun EntryScreen(navController: NavController, onFinish: () -> Unit, isNavigating
                     modifier = Modifier.fillMaxWidth(0.9f),
                     horizontalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
+                    val basicShape = MaterialTheme.shapes.large
                     Button(
                         onClick = { onNavigate { navController.navigate("basic_home_selection") } },
-                        modifier = Modifier.weight(1f).height(90.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(90.dp)
+                            .focusRequester(basicFocusRequester)
+                            .focusable(),
                         colors = buttonColors,
-                        shape = MaterialTheme.shapes.large,
+                        shape = basicShape,
                         enabled = !isNavigating
                     ) { Text("Basic\nHome Setup", textAlign = TextAlign.Center) }
                     
+                    val advancedShape = MaterialTheme.shapes.large
                     Button(
                         onClick = { onNavigate { navController.navigate("advanced_permissions") } },
-                        modifier = Modifier.weight(1f).height(90.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(90.dp)
+                            .focusable(),
                         colors = buttonColors,
-                        shape = MaterialTheme.shapes.large,
+                        shape = advancedShape,
                         enabled = !isNavigating
                     ) { Text("Advanced\nHome Setup", textAlign = TextAlign.Center) }
-                }
-            }
+        }
+    }
 
             Row(
                 modifier = Modifier.align(Alignment.BottomStart).padding(bottom = 2.dp),
@@ -325,12 +387,13 @@ fun EntryScreen(navController: NavController, onFinish: () -> Unit, isNavigating
                 Icon(imageVector = Icons.Default.Info, contentDescription = "Info", tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
 
-            TextButton(
-                onClick = { onNavigate { navController.navigate("no_home") } }, 
-                modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 2.dp),
-                enabled = !isNavigating
-            ) {
-                Text("Skip Home Setup", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelLarge)
+                TextButton(
+                    onClick = { onNavigate { navController.navigate("no_home") } }, 
+                    modifier = Modifier.align(Alignment.BottomEnd).padding(bottom = 2.dp),
+                    enabled = !isNavigating
+                ) {
+                    Text("Skip Home Setup", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelLarge)
+                }
             }
         }
     }
@@ -340,4 +403,14 @@ fun Context.findActivity(): Activity? = when (this) {
     is Activity -> this
     is ContextWrapper -> baseContext.findActivity()
     else -> null
+}
+
+private fun getAppName(context: Context, packageName: String?): String? {
+    if (packageName == null) return null
+    return try {
+        val pm = context.packageManager
+        pm.getApplicationInfo(packageName, 0).loadLabel(pm).toString()
+    } catch (e: Exception) {
+        packageName
+    }
 }

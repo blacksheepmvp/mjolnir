@@ -35,7 +35,9 @@ class AdvancedRequiredActivity : ComponentActivity() {
             MjolnirTheme {
                 AdvancedRequiredDialog(
                     onConfirm = {
-                        startActivity(Intent(this, OnboardingActivity::class.java))
+                        startActivity(Intent(this, OnboardingActivity::class.java).apply {
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        })
                         finish()
                     },
                     onDismiss = { finish() }

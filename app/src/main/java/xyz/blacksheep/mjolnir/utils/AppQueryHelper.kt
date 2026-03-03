@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.graphics.drawable.Drawable
 import xyz.blacksheep.mjolnir.KEY_APP_BLACKLIST
 import xyz.blacksheep.mjolnir.PREFS_NAME
+import xyz.blacksheep.mjolnir.settings.settingsPrefs
 
 /**
  * A simple data class holding the display information for an installed application.
@@ -40,21 +41,21 @@ class AppQueryHelper(private val context: Context) {
      * This ensures that the UI (which reads the pref directly) sees the defaults on a fresh install.
      */
     private fun getBlacklist(): Set<String> {
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val prefs = context.settingsPrefs()
+        val forcedBlacklist = setOf(context.packageName)
         
         // Explicitly check for key existence to distinguish "uninitialized" from "user cleared"
         if (!prefs.contains(KEY_APP_BLACKLIST)) {
             val defaultBlacklist = setOf(
-                "com.android.settings",
-                context.packageName // Add Mjolnir itself to the blacklist
+                "com.android.settings"
             )
             // Initialize the preference on disk so other components (e.g. Settings UI) see the correct state
             prefs.edit().putStringSet(KEY_APP_BLACKLIST, defaultBlacklist).apply()
-            return defaultBlacklist
+            return defaultBlacklist + forcedBlacklist
         }
         
         // If key exists, we trust the value (even if empty)
-        return prefs.getStringSet(KEY_APP_BLACKLIST, emptySet()) ?: emptySet()
+        return (prefs.getStringSet(KEY_APP_BLACKLIST, emptySet()) ?: emptySet()) + forcedBlacklist
     }
 
     /**

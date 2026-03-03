@@ -38,12 +38,14 @@ import xyz.blacksheep.mjolnir.KEY_HOME_INTERCEPTION_ACTIVE
 import xyz.blacksheep.mjolnir.KEY_TOP_APP
 import xyz.blacksheep.mjolnir.MainActivity
 import xyz.blacksheep.mjolnir.MjolnirApp
+import xyz.blacksheep.mjolnir.SafetyNetManager
 import xyz.blacksheep.mjolnir.PREFS_NAME
 import xyz.blacksheep.mjolnir.R
 import xyz.blacksheep.mjolnir.onboarding.OnboardingActivity
 import xyz.blacksheep.mjolnir.utils.DiagnosticsConfig
 import xyz.blacksheep.mjolnir.utils.DiagnosticsLogger
 import xyz.blacksheep.mjolnir.utils.DualScreenshotManager
+import xyz.blacksheep.mjolnir.settings.settingsPrefs
 
 /**
  * A foreground service responsible for keeping the Mjolnir application process alive.
@@ -70,7 +72,7 @@ class KeepAliveService : Service(), SharedPreferences.OnSharedPreferenceChangeLi
 
     override fun onCreate() {
         super.onCreate()
-        prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+        prefs = settingsPrefs()
         prefs.registerOnSharedPreferenceChangeListener(this)
         
         DiagnosticsLogger.logEvent("Service", "KEEPALIVE_STARTED", context = this)
@@ -259,6 +261,7 @@ class KeepAliveService : Service(), SharedPreferences.OnSharedPreferenceChangeLi
                 notificationAction = null
                 notificationPriority = NotificationCompat.PRIORITY_HIGH
                 clickIntent = Intent(this, OnboardingActivity::class.java).let {
+                    it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     PendingIntent.getActivity(this, 0, it, PendingIntent.FLAG_IMMUTABLE)
                 }
             }
@@ -287,16 +290,29 @@ class KeepAliveService : Service(), SharedPreferences.OnSharedPreferenceChangeLi
         } else {
             "Tap to fix configuration."
         }
+        val finalContentText = if (SafetyNetManager.isDefaultHome(this)) {
+            val status = SafetyNetManager.getSafetyNetStatus(this)
+            val activeIds = status.activeDisplayIds.toSet()
+            val runningCount = status.runningDisplayIds.count { it in activeIds }
+            val protectionLine = "Softlock protection: enabled ($runningCount/${activeIds.size})"
+            "$contentText\n$protectionLine"
+        } else {
+            contentText
+        }
 
         val builder = NotificationCompat.Builder(this, MjolnirApp.PERSISTENT_CHANNEL_ID)
             .setContentTitle(contentTitle)
-            .setContentText(contentText)
+            .setContentText(finalContentText)
             .setSmallIcon(R.drawable.ic_home)
             .setContentIntent(clickIntent)
             .setOngoing(true)
             .setCategory(Notification.CATEGORY_SERVICE)
             .setPriority(notificationPriority)
             .setSilent(true)
+
+        if (finalContentText.contains("\n")) {
+            builder.setStyle(NotificationCompat.BigTextStyle().bigText(finalContentText))
+        }
 
         notificationAction?.let {
             builder.addAction(it)

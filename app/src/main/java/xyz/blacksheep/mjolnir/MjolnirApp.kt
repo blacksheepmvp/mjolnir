@@ -3,7 +3,10 @@ package xyz.blacksheep.mjolnir
 import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.hardware.display.DisplayManager
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -40,6 +43,7 @@ class MjolnirApp : Application() {
         // Only prewarm icons in the main UI process.
         // The keepalive process should stay as lightweight as possible.
         if (!isKeepAliveProcess()) {
+            registerDisplayListener()
             CoroutineScope(Dispatchers.IO).launch {
                 DiagnosticsLogger.logEvent("App", "ICON_PREWARM_START", "totalApps=N/A", this@MjolnirApp)
                 val startTime = System.currentTimeMillis()
@@ -52,6 +56,30 @@ class MjolnirApp : Application() {
                 }
             }
         }
+    }
+
+    private fun registerDisplayListener() {
+        val displayManager = getSystemService(DisplayManager::class.java)
+        val handler = Handler(Looper.getMainLooper())
+        fun markPendingIfAllowed() {
+            if (!SafetyNetManager.isDefaultHome(this@MjolnirApp)) return
+            val keyguard = getSystemService(android.app.KeyguardManager::class.java)
+            if (keyguard.isKeyguardLocked) return
+            SafetyNetManager.markPending(this@MjolnirApp)
+        }
+        displayManager.registerDisplayListener(object : DisplayManager.DisplayListener {
+            override fun onDisplayAdded(displayId: Int) {
+                handler.postDelayed({ markPendingIfAllowed() }, 300L)
+            }
+
+            override fun onDisplayRemoved(displayId: Int) {
+                // No-op for now.
+            }
+
+            override fun onDisplayChanged(displayId: Int) {
+                handler.postDelayed({ markPendingIfAllowed() }, 300L)
+            }
+        }, handler)
     }
 
     /**

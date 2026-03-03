@@ -10,6 +10,7 @@ import android.text.TextUtils
 import androidx.core.content.edit
 import xyz.blacksheep.mjolnir.onboarding.AdvancedRequiredActivity
 import xyz.blacksheep.mjolnir.services.KeepAliveService
+import xyz.blacksheep.mjolnir.settings.settingsPrefs
 
 class DualScreenshotTileService : TileService() {
 
@@ -30,7 +31,7 @@ class DualScreenshotTileService : TileService() {
             return
         }
 
-        val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+        val prefs = settingsPrefs()
         val isEnabled = prefs.getBoolean(KEY_DSS_AUTO_STITCH, false)
         prefs.edit { putBoolean(KEY_DSS_AUTO_STITCH, !isEnabled) }
         updateTile()
@@ -47,7 +48,7 @@ class DualScreenshotTileService : TileService() {
     }
 
     private fun updateTile() {
-        val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+        val prefs = settingsPrefs()
         val isEnabled = prefs.getBoolean(KEY_DSS_AUTO_STITCH, false)
         val tile = qsTile
 

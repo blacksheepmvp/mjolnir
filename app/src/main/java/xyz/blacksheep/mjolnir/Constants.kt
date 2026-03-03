@@ -25,10 +25,14 @@ const val KEY_SINGLE_HOME_ACTION = "SINGLE_HOME_ACTION"
 const val KEY_DOUBLE_HOME_ACTION = "DOUBLE_HOME_ACTION"
 const val KEY_TRIPLE_HOME_ACTION = "TRIPLE_HOME_ACTION"
 const val KEY_LONG_HOME_ACTION = "LONG_HOME_ACTION"
+const val KEY_ACTIVE_GESTURE_CONFIG = "ACTIVE_GESTURE_CONFIG"
 
 const val KEY_USE_SYSTEM_DOUBLE_TAP_DELAY = "USE_SYSTEM_DOUBLE_TAP_DELAY"
 const val KEY_CUSTOM_DOUBLE_TAP_DELAY = "CUSTOM_DOUBLE_TAP_DELAY"
 const val KEY_AUTO_BOOT_BOTH_HOME = "autoBootBothHomeOnServiceStart"
+const val KEY_BOTH_AUTO_NOTHING_TO_HOME = "both_auto_nothing_to_home"
+const val KEY_LAST_BOOT_COUNT = "last_boot_count"
+const val KEY_LAST_BOOT_ELAPSED = "last_boot_elapsed"
 
 // Key for app picker blacklist
 const val KEY_APP_BLACKLIST = "APP_BLACKLIST"
@@ -50,6 +54,8 @@ const val KEY_DSS_AUTO_STITCH = "dss_auto_stitch"
 const val KEY_ONBOARDING_COMPLETE = "onboarding_complete"
 
 const val KEY_LAST_SEEN_VERSION = "last_seen_version"
+const val KEY_LAST_SEEN_VERSION_CODE = "last_seen_version_code"
+const val KEY_SAFETY_NET_PENDING = "safety_net_pending"
 
 /**
  * Intent action for deleting the source (bottom) screenshot from the result notification.

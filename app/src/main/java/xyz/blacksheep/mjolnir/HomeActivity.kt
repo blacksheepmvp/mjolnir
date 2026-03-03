@@ -13,15 +13,16 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.core.content.edit
 import xyz.blacksheep.mjolnir.onboarding.OnboardingActivity
-import xyz.blacksheep.mjolnir.settings.MainScreen
-import xyz.blacksheep.mjolnir.settings.getLaunchableApps
+import xyz.blacksheep.mjolnir.model.MainScreen
+import xyz.blacksheep.mjolnir.launchers.getLaunchableApps
 import xyz.blacksheep.mjolnir.utils.DualScreenLauncher
+import xyz.blacksheep.mjolnir.settings.settingsPrefs
 
 class HomeActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+        val prefs = settingsPrefs()
 
         // --- NEW: Requirement 2 Safety Check ---
         val isInterceptionActive = prefs.getBoolean(KEY_HOME_INTERCEPTION_ACTIVE, false)
@@ -55,6 +56,8 @@ class HomeActivity : ComponentActivity() {
             wipeConfigAndLaunchOnboarding()
             return
         }
+
+        SafetyNetManager.ensureSafetyNetActivities(this, allowStart = true)
 
         //val topAppPkg = prefs.getString(KEY_TOP_APP, null)
         //val bottomAppPkg = prefs.getString(KEY_BOTTOM_APP, null)
@@ -101,7 +104,7 @@ class HomeActivity : ComponentActivity() {
     }
 
     private fun isConfigurationValid(): Boolean {
-        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val prefs = settingsPrefs()
         val isInterceptionActive = prefs.getBoolean(KEY_HOME_INTERCEPTION_ACTIVE, false)
         val topApp = prefs.getString(KEY_TOP_APP, null)
         val bottomApp = prefs.getString(KEY_BOTTOM_APP, null)
@@ -150,7 +153,7 @@ class HomeActivity : ComponentActivity() {
 
     private fun wipeConfigAndLaunchOnboarding() {
         Toast.makeText(this, "Mjolnir config invalid, resetting.", Toast.LENGTH_LONG).show()
-        getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit {
+        settingsPrefs().edit {
             remove(KEY_TOP_APP)
             remove(KEY_BOTTOM_APP)
             remove(KEY_HOME_INTERCEPTION_ACTIVE)

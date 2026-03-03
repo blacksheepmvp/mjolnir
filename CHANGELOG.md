@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 ---
 
+# Mjolnir v0.2.7 - Dual-Screen Update
+
+## Highlights
+- **Softlock safety net**: Per-display SafetyNet activities plus a debug tile to surface them when needed.
+- **Protection indicators**: Persistent notification now reports coverage; settings/onboarding show protection dots on top/bottom cards.
+- **Display change handling**: Display listener marks safety-net pending without surfacing on wake.
+- **Gesture expansion**: New BOTH/FOCUS routing options, plus BOTH: Home and FOCUS: Home.
+- **Gesture presets**: Presets (Type-A/Type-B/Type-C) with unlimited custom presets and sharing.
+- **Start on boot (Advanced only)**: Choose BOTH: Auto or BOTH: Home.
+- **Config files moved**: Settings live in `/Android/data/xyz.blacksheep.mjolnir/` (`settings.json`, `blacklist.json`, `config.ini`).
+- **Major refactor**: Large internal cleanup touching all UI/UX surfaces.
+
+---
+
 # Mjolnir v0.2.6a - The "Safety" Hotfix
 
 This release is focused entirely on fixing bugs, closing loopholes, and improving the safety and stability of the onboarding process.
