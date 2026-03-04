@@ -184,7 +184,6 @@ class HomeActionLauncher(private val context: Context) {
     fun launchTop(isManualSequence: Boolean = false) {
         val topAppPkg = getCleanApp(KEY_TOP_APP)
         val targetPkg = topAppPkg
-        val (topDisplayId, _) = resolveDisplayIds()
 
         DiagnosticsLogger.logEvent("Launcher", "LAUNCH_ATTEMPT", "slot=TOP package=$targetPkg", context)
 
@@ -195,14 +194,7 @@ class HomeActionLauncher(private val context: Context) {
 
         if (targetPkg in SPECIAL_HOME_APPS) {
             DiagnosticsLogger.logEvent("Launcher", "DEFAULT_HOME_REDIRECT", "slot=TOP package=$targetPkg", context)
-            if (context is AccessibilityService) {
-                DiagnosticsLogger.logEvent(TAG, "FOCUS_HACK_USED", "reason=TARGETED_HOME displayId=$topDisplayId", context)
-                FocusHackHelper.requestFocus(context, topDisplayId) {
-                    context.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
-                }
-            } else {
-                DiagnosticsLogger.logEvent("Error", "LAUNCH_FAILED", "msg=Context is not AccessibilityService for FocusHack", context)
-            }
+            launchDefaultHomeOnTop()
             if (!isManualSequence) return
         } else {
             val showAllApps = prefs.getBoolean(KEY_SHOW_ALL_APPS, false)
@@ -230,7 +222,6 @@ class HomeActionLauncher(private val context: Context) {
     fun launchBottom(isManualSequence: Boolean = false) {
         val bottomAppPkg = getCleanApp(KEY_BOTTOM_APP)
         val targetPkg = bottomAppPkg
-        val (_, bottomDisplayId) = resolveDisplayIds()
 
         DiagnosticsLogger.logEvent("Launcher", "LAUNCH_ATTEMPT", "slot=BOTTOM package=$targetPkg", context)
 
@@ -241,14 +232,7 @@ class HomeActionLauncher(private val context: Context) {
 
         if (targetPkg in SPECIAL_HOME_APPS) {
             DiagnosticsLogger.logEvent("Launcher", "DEFAULT_HOME_REDIRECT", "slot=BOTTOM package=$targetPkg", context)
-            if (context is AccessibilityService) {
-                DiagnosticsLogger.logEvent(TAG, "FOCUS_HACK_USED", "reason=TARGETED_HOME displayId=$bottomDisplayId", context)
-                FocusHackHelper.requestFocus(context, bottomDisplayId) {
-                    context.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
-                }
-            } else {
-                DiagnosticsLogger.logEvent("Error", "LAUNCH_FAILED", "msg=Context is not AccessibilityService for FocusHack", context)
-            }
+            launchDefaultHomeOnBottom()
             if (!isManualSequence) return
         } else {
             val showAllApps = prefs.getBoolean(KEY_SHOW_ALL_APPS, false)
@@ -276,7 +260,6 @@ class HomeActionLauncher(private val context: Context) {
             val topAppPkg = getCleanApp(KEY_TOP_APP)
             val bottomAppPkg = getCleanApp(KEY_BOTTOM_APP)
             val mainScreen = MainScreen.valueOf(prefs.getString(KEY_MAIN_SCREEN, MainScreen.TOP.name) ?: MainScreen.TOP.name)
-            val (topDisplayId, bottomDisplayId) = resolveDisplayIds()
             val mapNothingToHome = prefs.getBoolean(KEY_BOTH_AUTO_NOTHING_TO_HOME, true)
             DiagnosticsLogger.logEvent("Launcher", "LAUNCH_ATTEMPT", "slot=BOTH packageTop=$topAppPkg packageBottom=$bottomAppPkg mainScreen=$mainScreen", context)
 
@@ -393,69 +376,49 @@ class HomeActionLauncher(private val context: Context) {
         }
     }
 
-    fun launchDefaultHomeOnTop() {
-        val (topDisplayId, _) = resolveDisplayIds()
-        DiagnosticsLogger.logEvent(TAG, "DEFAULT_HOME_TOP", "displayId=$topDisplayId", context)
+    private fun launchDefaultHomeOnDisplay(isTop: Boolean) {
+        val (topDisplayId, bottomDisplayId) = resolveDisplayIds()
+        val targetDisplayId = if (isTop) topDisplayId else bottomDisplayId
+        val slot = if (isTop) "TOP" else "BOTTOM"
+        DiagnosticsLogger.logEvent(TAG, "DEFAULT_HOME_$slot", "displayId=$targetDisplayId", context)
+
+        if (context is AccessibilityService) {
+            DiagnosticsLogger.logEvent(TAG, "FOCUS_HACK_USED", "reason=TARGETED_HOME displayId=$targetDisplayId", context)
+            FocusHackHelper.requestFocus(context, targetDisplayId) {
+                context.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
+            }
+            return
+        }
 
         val homeIntent = buildDefaultHomeIntent()
         if (homeIntent != null) {
             try {
-                launchOnDisplay(true, homeIntent)
-                DiagnosticsLogger.logEvent(TAG, "DEFAULT_HOME_TOP_LAUNCH", "method=ExplicitIntent", context)
+                launchOnDisplay(isTop, homeIntent)
+                DiagnosticsLogger.logEvent(TAG, "DEFAULT_HOME_${slot}_LAUNCH", "method=ExplicitIntent", context)
                 return
             } catch (e: Exception) {
-                DiagnosticsLogger.logEvent(TAG, "DEFAULT_HOME_TOP_LAUNCH_FAILED", "method=ExplicitIntent msg=${e.message}", context)
+                DiagnosticsLogger.logEvent(TAG, "DEFAULT_HOME_${slot}_LAUNCH_FAILED", "method=ExplicitIntent msg=${e.message}", context)
             }
         }
 
-        if (context is AccessibilityService) {
-            DiagnosticsLogger.logEvent(TAG, "DEFAULT_HOME_TOP_LAUNCH", "method=GlobalHome", context)
-            context.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
-        } else {
-            DiagnosticsLogger.logEvent(TAG, "DEFAULT_HOME_TOP_FAILED", "reason=ContextNotAccessibilityService", context)
-        }
+        DiagnosticsLogger.logEvent(TAG, "DEFAULT_HOME_${slot}_FAILED", "reason=ContextNotAccessibilityService", context)
+    }
+
+    fun launchDefaultHomeOnTop() {
+        launchDefaultHomeOnDisplay(isTop = true)
     }
 
     fun launchDefaultHomeOnBottom() {
-        val (_, bottomDisplayId) = resolveDisplayIds()
-        DiagnosticsLogger.logEvent(TAG, "DEFAULT_HOME_BOTTOM", "displayId=$bottomDisplayId", context)
-
-        val homeIntent = buildDefaultHomeIntent()
-        if (homeIntent != null) {
-            try {
-                launchOnDisplay(false, homeIntent)
-                DiagnosticsLogger.logEvent(TAG, "DEFAULT_HOME_BOTTOM_LAUNCH", "method=ExplicitIntent", context)
-                return
-            } catch (e: Exception) {
-                DiagnosticsLogger.logEvent(TAG, "DEFAULT_HOME_BOTTOM_LAUNCH_FAILED", "method=ExplicitIntent msg=${e.message}", context)
-            }
-        }
-
-        if (context is AccessibilityService) {
-            DiagnosticsLogger.logEvent(TAG, "DEFAULT_HOME_BOTTOM_LAUNCH", "method=GlobalHome", context)
-            context.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
-        } else {
-            DiagnosticsLogger.logEvent(TAG, "DEFAULT_HOME_BOTTOM_FAILED", "reason=ContextNotAccessibilityService", context)
-        }
+        launchDefaultHomeOnDisplay(isTop = false)
     }
 
     fun launchDefaultHomeOnBoth() {
         val (topDisplayId, bottomDisplayId) = resolveDisplayIds()
-        if (context is AccessibilityService) {
-            DiagnosticsLogger.logEvent(TAG, "DEFAULT_HOME_BOTH", "topId=$topDisplayId bottomId=$bottomDisplayId", context)
-            DiagnosticsLogger.logEvent(TAG, "FOCUS_HACK_USED", "reason=TARGETED_HOME displayId=$topDisplayId", context)
-            FocusHackHelper.requestFocus(context, topDisplayId) {
-                context.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
-            }
-            scope.launch {
-                delay(250)
-                DiagnosticsLogger.logEvent(TAG, "FOCUS_HACK_USED", "reason=TARGETED_HOME displayId=$bottomDisplayId", context)
-                FocusHackHelper.requestFocus(context, bottomDisplayId) {
-                    context.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
-                }
-            }
-        } else {
-            DiagnosticsLogger.logEvent(TAG, "DEFAULT_HOME_BOTH_FAILED", "reason=ContextNotAccessibilityService", context)
+        DiagnosticsLogger.logEvent(TAG, "DEFAULT_HOME_BOTH", "topId=$topDisplayId bottomId=$bottomDisplayId", context)
+        launchDefaultHomeOnTop()
+        scope.launch {
+            delay(250)
+            launchDefaultHomeOnBottom()
         }
     }
 }
