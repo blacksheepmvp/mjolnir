@@ -31,6 +31,8 @@ const val KEY_USE_SYSTEM_DOUBLE_TAP_DELAY = "USE_SYSTEM_DOUBLE_TAP_DELAY"
 const val KEY_CUSTOM_DOUBLE_TAP_DELAY = "CUSTOM_DOUBLE_TAP_DELAY"
 const val KEY_AUTO_BOOT_BOTH_HOME = "autoBootBothHomeOnServiceStart"
 const val KEY_BOTH_AUTO_NOTHING_TO_HOME = "both_auto_nothing_to_home"
+const val KEY_TOP_BOTTOM_LAUNCH_DELAY_MS = "top_bottom_launch_delay_ms"
+const val DEFAULT_TOP_BOTTOM_LAUNCH_DELAY_MS = 500
 const val KEY_LAST_BOOT_COUNT = "last_boot_count"
 const val KEY_LAST_BOOT_ELAPSED = "last_boot_elapsed"
 

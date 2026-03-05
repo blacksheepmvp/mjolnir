@@ -38,6 +38,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -71,6 +72,9 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.foundation.text.ClickableText
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.core.content.edit
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
@@ -608,11 +612,69 @@ fun SimpleMarkdownText(markdown: String, modifier: Modifier = Modifier) {
     // FIX: Read theme values in the Composable context
     val titleLargeSize = MaterialTheme.typography.titleLarge.fontSize
     val titleMediumSize = MaterialTheme.typography.titleMedium.fontSize
+    val uriHandler = LocalUriHandler.current
+    val bodyColor = LocalContentColor.current
+    val linkColor = if (isSystemInDarkTheme()) Color(0xFF9FA8FF) else Color(0xFF4F46E5)
 
     // FIX: Pass theme values as keys to remember so it updates on theme change
-    val annotatedString = remember(markdown, titleLargeSize, titleMediumSize) {
+    val annotatedString = remember(markdown, titleLargeSize, titleMediumSize, linkColor) {
         buildAnnotatedString {
             val lines = markdown.lines()
+            val linkRegex = Regex("\\[(.+?)]\\((https?://[^\\s)]+)\\)")
+            val boldRegex = Regex("\\*\\*(.*?)\\*\\*")
+
+            fun androidx.compose.ui.text.AnnotatedString.Builder.appendBoldAware(text: String) {
+                var lastIndex = 0
+                boldRegex.findAll(text).forEach { matchResult ->
+                    val startIndex = matchResult.range.first
+                    val endIndex = matchResult.range.last + 1
+                    val boldText = matchResult.groupValues[1]
+
+                    if (startIndex > lastIndex) {
+                        append(text.substring(lastIndex, startIndex))
+                    }
+
+                    withStyle(style = SpanStyle(fontWeight = FontWeight.Bold)) {
+                        append(boldText)
+                    }
+                    lastIndex = endIndex
+                }
+
+                if (lastIndex < text.length) {
+                    append(text.substring(lastIndex))
+                }
+            }
+
+            fun androidx.compose.ui.text.AnnotatedString.Builder.appendInlineStyles(text: String) {
+                var cursor = 0
+                linkRegex.findAll(text).forEach { linkMatch ->
+                    val start = linkMatch.range.first
+                    val end = linkMatch.range.last + 1
+                    val label = linkMatch.groupValues[1]
+                    val url = linkMatch.groupValues[2]
+
+                    if (start > cursor) {
+                        appendBoldAware(text.substring(cursor, start))
+                    }
+
+                    pushStringAnnotation(tag = "URL", annotation = url)
+                    withStyle(
+                        style = SpanStyle(
+                            color = linkColor,
+                            textDecoration = TextDecoration.Underline
+                        )
+                    ) {
+                        append(label)
+                    }
+                    pop()
+                    cursor = end
+                }
+
+                if (cursor < text.length) {
+                    appendBoldAware(text.substring(cursor))
+                }
+            }
+
             lines.forEach { line ->
                 // Handle Headers first as they are block-level and exclusive
                 if (line.startsWith("# ")) {
@@ -634,31 +696,7 @@ fun SimpleMarkdownText(markdown: String, modifier: Modifier = Modifier) {
                         append("• ")
                         processedLine = processedLine.removePrefix("- ")
                     }
-
-                    // Handle bold within the rest of the line
-                    val boldRegex = Regex("\\*\\*(.*?)\\*\\*")
-                    var lastIndex = 0
-                    boldRegex.findAll(processedLine).forEach { matchResult ->
-                        val startIndex = matchResult.range.first
-                        val endIndex = matchResult.range.last + 1
-                        val boldText = matchResult.groupValues[1]
-
-                        // Append text before the bold part
-                        if (startIndex > lastIndex) {
-                            append(processedLine.substring(lastIndex, startIndex))
-                        }
-
-                        // Append the bold text with style
-                        withStyle(style = SpanStyle(fontWeight = FontWeight.Bold)) {
-                            append(boldText)
-                        }
-                        lastIndex = endIndex
-                    }
-
-                    // Append any remaining text after the last bold part
-                    if (lastIndex < processedLine.length) {
-                        append(processedLine.substring(lastIndex))
-                    }
+                    appendInlineStyles(processedLine)
 
                     // Append newline
                     append("\n")
@@ -667,7 +705,16 @@ fun SimpleMarkdownText(markdown: String, modifier: Modifier = Modifier) {
         }
     }
 
-    Text(text = annotatedString, modifier = modifier, style = MaterialTheme.typography.bodyMedium)
+    ClickableText(
+        text = annotatedString,
+        modifier = modifier,
+        style = MaterialTheme.typography.bodyMedium.copy(color = bodyColor)
+    ) { offset ->
+        annotatedString
+            .getStringAnnotations(tag = "URL", start = offset, end = offset)
+            .firstOrNull()
+            ?.let { uriHandler.openUri(it.item) }
+    }
 }
 
 @Composable

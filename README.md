@@ -8,12 +8,16 @@ With **FOCUS: Home**, you can do the same but only for the selected screen.
 Prefer mixing single-screen activities? **BOTH: Auto** and **FOCUS: Auto** are here.  
 **TOP/BOTTOM** options remain for full customization.
 
+[FAQ](./FAQ.md) | [Releases](https://github.com/blacksheepmvp/mjolnir/releases) | [Add to Obtanium](https://apps.obtainium.imranr.dev/redirect.html?r=obtainium%3A%2F%2Fapp%2F%7B%22id%22%3A%22xyz.blacksheep.mjolnir%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2Fblacksheepmvp%2Fmjolnir%22%2C%22author%22%3A%22blacksheepmvp%22%2C%22name%22%3A%22Mjolnir%22%2C%22apkUrls%22%3Anull%2C%22otherAssetUrls%22%3Anull%2C%22preferredApkIndex%22%3A0%2C%22additionalSettings%22%3A%22%7B%5C%22includePrereleases%5C%22%3Afalse%2C%5C%22fallbackToOlderReleases%5C%22%3Atrue%2C%5C%22verifyLatestTag%5C%22%3Afalse%2C%5C%22sortMethodChoice%5C%22%3A%5C%22date%5C%22%2C%5C%22trackOnly%5C%22%3Afalse%2C%5C%22versionDetection%5C%22%3Atrue%2C%5C%22autoApkFilterByArch%5C%22%3Atrue%7D%22%2C%22overrideSource%22%3A%22GitHub%22%2C%22allowIdChange%22%3Afalse%7D) | [Discord](https://discord.gg/SByZdew8Kw)
+
 ---
 
 ## ⚡ A Home Button Router for Multi-Display Android Devices
 
 Mjolnir gives you **precise control** over what happens when you press the Home button — routing frontends or launchers to the top display, bottom display, or both.  
 Originally designed for the **AYN Thor**, it also works on single-screen devices as a powerful Home-button automation tool.
+
+**Device support note (0.2.7):** AYN Thor is the primary supported target. RG-DS support is planned for 0.2.8 and is not officially supported in 0.2.7.
 
 ---
 
@@ -24,8 +28,7 @@ Mjolnir supports two onboarding modes:
 ### **Basic Mode (Safe, Simple)**
 
 - Android’s default launcher remains unchanged
-- Mjolnir intercepts Home only when toggled on
-- Pressing Home routes apps to the top/bottom screens according to your configuration
+- Mjolnir launches your selected top/bottom apps without Home interception
 - Requires valid apps in both slots
 
 ### **Advanced Mode (Full Functionality)**
@@ -57,7 +60,7 @@ Configs live at: `/Android/data/xyz.blacksheep.mjolnir/`
 ### 1. **Download**
 
 Get the latest release from the [Releases page](https://github.com/blacksheepmvp/mjolnir/releases).  
-*(Optional)* Add to [Obtanium](https://github.com/ImranR98/Obtainium) for auto-updates.
+Use [Add to Obtanium](https://apps.obtainium.imranr.dev/redirect.html?r=obtainium%3A%2F%2Fapp%2F%7B%22id%22%3A%22xyz.blacksheep.mjolnir%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2Fblacksheepmvp%2Fmjolnir%22%2C%22author%22%3A%22blacksheepmvp%22%2C%22name%22%3A%22Mjolnir%22%2C%22apkUrls%22%3Anull%2C%22otherAssetUrls%22%3Anull%2C%22preferredApkIndex%22%3A0%2C%22additionalSettings%22%3A%22%7B%5C%22includePrereleases%5C%22%3Afalse%2C%5C%22fallbackToOlderReleases%5C%22%3Atrue%2C%5C%22verifyLatestTag%5C%22%3Afalse%2C%5C%22sortMethodChoice%5C%22%3A%5C%22date%5C%22%2C%5C%22trackOnly%5C%22%3Afalse%2C%5C%22versionDetection%5C%22%3Atrue%2C%5C%22autoApkFilterByArch%5C%22%3Atrue%7D%22%2C%22overrideSource%22%3A%22GitHub%22%2C%22allowIdChange%22%3Afalse%7D) for auto-updates.
 
 ### 2. **Initialize**
 

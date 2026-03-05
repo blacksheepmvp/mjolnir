@@ -20,17 +20,25 @@ class FocusStealerActivity : Activity() {
             WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
             WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
         )
-        DiagnosticsLogger.logEvent("FocusStealer", "ACTIVITY_CREATED", "displayId=${intent.getIntExtra(EXTRA_DISPLAY_ID, -1)}", this)
+        DiagnosticsLogger.logEvent(
+            "FocusStealer",
+            "ACTIVITY_CREATED",
+            "displayId=${intent.getIntExtra(EXTRA_DISPLAY_ID, -1)} requestId=${intent.getStringExtra(EXTRA_REQUEST_ID)}",
+            this
+        )
     }
 
     override fun onResume() {
         super.onResume()
         Handler(Looper.getMainLooper()).postDelayed({
+            var onComplete: (() -> Unit)? = null
             try {
                 // Consume and run the action passed from the helper
-                val action = FocusHackHelper.consumePendingAction()
+                val requestId = intent.getStringExtra(EXTRA_REQUEST_ID)
+                val (action, completionCallback) = FocusHackHelper.consumePendingRequest(requestId)
+                onComplete = completionCallback
                 if (action != null) {
-                    action()
+                    action.invoke()
                     DiagnosticsLogger.logEvent("FocusStealer", "ACTION_CALLBACK_EXECUTED", context = this)
                 } else {
                     DiagnosticsLogger.logEvent("FocusStealer", "ACTION_NOT_FOUND", "No pending action to execute.", this)
@@ -38,6 +46,10 @@ class FocusStealerActivity : Activity() {
             } catch (e: Exception) {
                 DiagnosticsLogger.logEvent("FocusStealer", "ACTION_FAILED", "msg=${e.message}", this)
             } finally {
+                try {
+                    onComplete?.invoke()
+                } catch (_: Exception) {
+                }
                 // Ensure the activity is always closed.
                 finish()
             }
@@ -51,20 +63,22 @@ class FocusStealerActivity : Activity() {
 
     companion object {
         private const val EXTRA_DISPLAY_ID = "mjolnir_display_id"
+        private const val EXTRA_REQUEST_ID = "mjolnir_focus_request_id"
 
-        fun launchForDisplay(context: Context, displayId: Int) {
+        fun launchForDisplay(context: Context, displayId: Int, requestId: String): Boolean {
             val dm = context.getSystemService(Context.DISPLAY_SERVICE) as android.hardware.display.DisplayManager
             val display = dm.getDisplay(displayId)
             
             if (display == null) {
                 DiagnosticsLogger.logEvent("FocusStealer", "LAUNCH_FAILED_INVALID_DISPLAY", "displayId=$displayId", context)
-                return
+                return false
             }
 
             val displayContext = context.createDisplayContext(display)
             val intent = Intent(displayContext, FocusStealerActivity::class.java).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_ANIMATION)
                 putExtra(EXTRA_DISPLAY_ID, displayId)
+                putExtra(EXTRA_REQUEST_ID, requestId)
             }
 
             val options = ActivityOptions.makeBasic().apply {
@@ -72,10 +86,12 @@ class FocusStealerActivity : Activity() {
             }
             
             try {
-                DiagnosticsLogger.logEvent("FocusStealer", "LAUNCHING", "displayId=$displayId", context)
+                DiagnosticsLogger.logEvent("FocusStealer", "LAUNCHING", "displayId=$displayId requestId=$requestId", context)
                 displayContext.startActivity(intent, options.toBundle())
+                return true
             } catch (e: Exception) {
                 DiagnosticsLogger.logEvent("FocusStealer", "LAUNCH_FAILED", "msg=${e.message}", context)
+                return false
             }
         }
     }

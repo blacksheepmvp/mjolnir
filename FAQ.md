@@ -18,7 +18,7 @@ Mjolnir works best if you already have **at least two other apps/frontends/launc
 Not necessarily. Mjolnir can act as your default home, *or* you can keep another launcher as default and let Mjolnir manage what shows on each screen.
 
 ## What devices does it support?
-Any dual‑screen Android device should work, but compatibility varies by OEM quirks. I test on AYN Thor and Anbernic RG‑DS.
+Any dual‑screen Android device may work, but compatibility varies by OEM quirks. Current testing is centered on AYN Thor.
 
 **Important**: As of 0.2.7, the RG‑DS is **not officially supported** and does **not** work in current testing. RG‑DS support is planned for 0.2.8.
 
@@ -59,6 +59,9 @@ Restart Mjolnir and it will rebuild defaults.
 
 ## Where do logs go?
 Logs are stored in `/Android/data/xyz.blacksheep.mjolnir/logs/`. If something breaks, check there first.
+
+## Where is the Discord server?
+Join here: https://discord.gg/SByZdew8Kw
 
 ## How do I share presets or configs?
 Gesture presets live in `/gestures/`. You can share the `.cfg` files directly.
