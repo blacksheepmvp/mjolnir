@@ -45,7 +45,8 @@ object SettingsStore {
         KEY_DSS_AUTO_STITCH,
         KEY_DSS_SHARE_AFTER_CAPTURE,
         KEY_AUTO_BOOT_BOTH_HOME,
-        KEY_BOTH_AUTO_NOTHING_TO_HOME
+        KEY_BOTH_AUTO_NOTHING_TO_HOME,
+        KEY_TOP_BOTTOM_LAUNCH_DELAY_MS
     )
 
     private val internalKeys = setOf(
@@ -87,6 +88,7 @@ object SettingsStore {
         KEY_LAUNCH_FAILURE_COUNT to KeyType.INT,
         KEY_AUTO_BOOT_BOTH_HOME to KeyType.BOOLEAN,
         KEY_BOTH_AUTO_NOTHING_TO_HOME to KeyType.BOOLEAN,
+        KEY_TOP_BOTTOM_LAUNCH_DELAY_MS to KeyType.INT,
         KEY_ENABLE_FOCUS_LOCK_WORKAROUND to KeyType.BOOLEAN,
         KEY_DSS_PROJECTION_DATA to KeyType.STRING,
         KEY_ONBOARDING_COMPLETE to KeyType.BOOLEAN,
@@ -123,7 +125,8 @@ object SettingsStore {
         KEY_DSS_AUTO_STITCH to "DSS_AUTO_STITCH: true | false.",
         KEY_DSS_SHARE_AFTER_CAPTURE to "DSS_SHARE_AFTER_CAPTURE: true | false.",
         KEY_AUTO_BOOT_BOTH_HOME to "START_ON_BOOT_AUTO (Advanced only): true = BOTH: Auto, false = BOTH: Home.",
-        KEY_BOTH_AUTO_NOTHING_TO_HOME to "BOTH_AUTO_NOTHING_TO_HOME: true = empty slot launches Home, false = empty slot does nothing."
+        KEY_BOTH_AUTO_NOTHING_TO_HOME to "BOTH_AUTO_NOTHING_TO_HOME: true = empty slot launches Home, false = empty slot does nothing.",
+        KEY_TOP_BOTTOM_LAUNCH_DELAY_MS to "TOP_BOTTOM_LAUNCH_DELAY_MS: integer milliseconds (0-500). Delay between sequenced top/bottom launches."
     )
 
     private val configComments = linkedMapOf(

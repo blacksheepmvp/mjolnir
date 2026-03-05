@@ -44,7 +44,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
@@ -76,10 +75,12 @@ import androidx.compose.ui.unit.dp
 import androidx.constraintlayout.compose.ConstraintLayout
 import androidx.navigation.NavController
 import xyz.blacksheep.mjolnir.KEY_CUSTOM_DOUBLE_TAP_DELAY
+import xyz.blacksheep.mjolnir.DEFAULT_TOP_BOTTOM_LAUNCH_DELAY_MS
 import xyz.blacksheep.mjolnir.KEY_AUTO_BOOT_BOTH_HOME
 import xyz.blacksheep.mjolnir.KEY_BOTH_AUTO_NOTHING_TO_HOME
 import xyz.blacksheep.mjolnir.KEY_ENABLE_FOCUS_LOCK_WORKAROUND
 import xyz.blacksheep.mjolnir.KEY_HOME_INTERCEPTION_ACTIVE
+import xyz.blacksheep.mjolnir.KEY_TOP_BOTTOM_LAUNCH_DELAY_MS
 import xyz.blacksheep.mjolnir.KEY_USE_SYSTEM_DOUBLE_TAP_DELAY
 import xyz.blacksheep.mjolnir.KEY_ACTIVE_GESTURE_CONFIG
 import xyz.blacksheep.mjolnir.SafetyNetManager
@@ -681,6 +682,13 @@ fun HomeLauncherSettingsMenu(
                     mutableStateOf(prefs.getBoolean(KEY_BOTH_AUTO_NOTHING_TO_HOME, true))
                 }
 
+                var topBottomLaunchDelayMs by remember {
+                    mutableStateOf(
+                        prefs.getInt(KEY_TOP_BOTTOM_LAUNCH_DELAY_MS, DEFAULT_TOP_BOTTOM_LAUNCH_DELAY_MS)
+                            .coerceIn(0, 500)
+                    )
+                }
+
                 var useSystemDoubleTapDelay by remember {
                     mutableStateOf(prefs.getBoolean(KEY_USE_SYSTEM_DOUBLE_TAP_DELAY, true))
                 }
@@ -697,6 +705,12 @@ fun HomeLauncherSettingsMenu(
                 fun updateCustomDoubleTapDelay(newValue: Int) {
                     customDoubleTapDelayMs = newValue
                     prefs.edit().putInt(KEY_CUSTOM_DOUBLE_TAP_DELAY, newValue).apply()
+                }
+
+                fun updateTopBottomLaunchDelay(newValue: Int) {
+                    val clamped = newValue.coerceIn(0, 500)
+                    topBottomLaunchDelayMs = clamped
+                    prefs.edit().putInt(KEY_TOP_BOTTOM_LAUNCH_DELAY_MS, clamped).apply()
                 }
 
                 Column(modifier = Modifier
@@ -731,7 +745,7 @@ fun HomeLauncherSettingsMenu(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text(text = "Empty slot behavior (BOTH: Auto)")
+                            Text(text = "Empty slot behavior (Auto actions)")
                             Text(
                                 text = if (bothAutoNothingToHome) "Launches Home" else "Does nothing",
                                 style = MaterialTheme.typography.bodySmall,
@@ -746,6 +760,30 @@ fun HomeLauncherSettingsMenu(
                             }
                         )
                     }
+
+                    Spacer(Modifier.height(16.dp))
+
+                    val minLaunchDelay = 0
+                    val maxLaunchDelay = 500
+                    val launchDelayStep = 10
+                    val launchDelaySteps = (maxLaunchDelay - minLaunchDelay) / launchDelayStep - 1
+
+                    Text(
+                        text = "Top/bottom launch delay (${topBottomLaunchDelayMs} ms)",
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+
+                    Slider(
+                        value = topBottomLaunchDelayMs.toFloat(),
+                        onValueChange = { newValue ->
+                            val stepped = ((newValue - minLaunchDelay) / launchDelayStep)
+                                .roundToInt() * launchDelayStep + minLaunchDelay
+                            updateTopBottomLaunchDelay(stepped)
+                        },
+                        valueRange = minLaunchDelay.toFloat()..maxLaunchDelay.toFloat(),
+                        steps = launchDelaySteps,
+                        modifier = Modifier.fillMaxWidth()
+                    )
 
                     Spacer(Modifier.height(16.dp))
 

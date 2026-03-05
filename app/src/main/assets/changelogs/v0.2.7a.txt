@@ -1,0 +1,5 @@
+# Mjolnir v0.2.7a
+
+## Hotfix
+- Fixed obscure gesture combinations.
+- Need help or want to report issues? [Join Discord](https://discord.gg/SByZdew8Kw)

@@ -5,6 +5,7 @@ import android.content.pm.PackageInfo
 import android.hardware.display.DisplayManager
 import android.os.Build
 import android.os.Environment
+import android.util.Log
 import android.view.Display
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -31,6 +32,7 @@ import xyz.blacksheep.mjolnir.settings.settingsPrefs
 object DiagnosticsLogger {
 
     private val coroutineScope = CoroutineScope(Dispatchers.IO)
+    private const val LOGCAT_TAG = "MJ_DIAG"
 
     /**
      * Initializes the logging system by ensuring the log directory exists.
@@ -317,7 +319,9 @@ object DiagnosticsLogger {
                 val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.getDefault()).format(Date())
                 val logLine = "[$timestamp][$tag] $message\n"
                 logFile.appendText(logLine)
+                Log.d(LOGCAT_TAG, "[$tag] $message")
             } catch (e: Exception) {
+                Log.e(LOGCAT_TAG, "[DiagnosticsLogger] WRITE_FAILED: ${e.message}")
                 e.printStackTrace()
             }
         }

@@ -1,11 +1,15 @@
 package xyz.blacksheep.mjolnir.settings
 
+import android.content.Intent
+import android.net.Uri
+import android.widget.Toast
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.ui.res.painterResource
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
@@ -32,10 +36,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.navigation.NavController
+import xyz.blacksheep.mjolnir.R
 
 /**
  * The top-level settings landing page. Displays the primary categories of
@@ -45,6 +51,8 @@ import androidx.navigation.NavController
 @Composable
 fun MainSettingsScreen(navController: NavController, onClose: () -> Unit) {
     val firstItemFocus = remember { FocusRequester() }
+    val context = LocalContext.current
+    val discordInviteUrl = "https://discord.gg/SByZdew8Kw"
 
     LaunchedEffect(Unit) {
         firstItemFocus.requestFocus()
@@ -100,10 +108,20 @@ fun MainSettingsScreen(navController: NavController, onClose: () -> Unit) {
             }
             item {
                 SettingsItem(
-                    icon = Icons.Default.Info,
-                    title = "About",
-                    subtitle = "Version and project information"
-                ) { navController.navigate("about") }
+                    iconRes = R.drawable.ic_discord,
+                    title = "Help & Community",
+                    subtitle = "Get support, updates, and troubleshooting help"
+                ) {
+                    try {
+                        context.startActivity(
+                            Intent(Intent.ACTION_VIEW, Uri.parse(discordInviteUrl)).apply {
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                        )
+                    } catch (e: Exception) {
+                        Toast.makeText(context, "Could not open Discord invite.", Toast.LENGTH_SHORT).show()
+                    }
+                }
             }
         }
     }
@@ -128,6 +146,33 @@ fun SettingsItem(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(icon, contentDescription = null, modifier = Modifier.padding(end = 24.dp))
+        Column {
+            Text(title, style = MaterialTheme.typography.bodyLarge)
+            Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+fun SettingsItem(
+    iconRes: Int,
+    title: String,
+    subtitle: String,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 20.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            painter = painterResource(id = iconRes),
+            contentDescription = null,
+            modifier = Modifier.padding(end = 24.dp)
+        )
         Column {
             Text(title, style = MaterialTheme.typography.bodyLarge)
             Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
